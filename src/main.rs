@@ -1,12 +1,15 @@
 mod parser;
+mod ui;
 
-use parser::{DockerContainer, SshHost};
 use std::path::Path;
 
-fn main() {
-    let ssh_config_path = Path::new("/home/karavellas/.ssh/config");
-    let hosts: Vec<SshHost> = parser::parse_ssh_config(ssh_config_path).unwrap();
-    let containers: Vec<DockerContainer> = parser::parse_docker_containers().unwrap();
-    dbg!(hosts);
-    dbg!(containers);
+fn main() -> anyhow::Result<()> {
+    let ssh_config_path = dirs::home_dir()
+        .map(|home| home.join(".ssh/config"))
+        .unwrap_or_else(|| Path::new(".ssh/config").to_path_buf());
+
+    let hosts = parser::parse_ssh_config(&ssh_config_path)?;
+    let containers = parser::parse_docker_containers()?;
+
+    ui::run(hosts, containers)
 }

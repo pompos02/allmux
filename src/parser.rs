@@ -13,7 +13,13 @@ pub struct SshHost {
 
 #[derive(Debug, Clone)]
 pub struct DockerContainer {
+    pub id: String,
     pub name: String,
+    pub image: String,
+    pub command: String,
+    pub created_at: String,
+    pub status_text: String,
+    pub ports: String,
     pub status: bool,
 }
 
@@ -81,7 +87,7 @@ pub fn parse_ssh_config(path: &Path) -> Result<Vec<SshHost>> {
 
 pub fn parse_docker_containers() -> Result<Vec<DockerContainer>> {
     let output = Command::new("docker")
-        .args(["ps", "-a", "--format", "{{.Names}}\t{{.Status}}"])
+        .args(["ps", "-a"])
         .output()
         .context("Failed to execture docker command, is docker running?")?;
 
@@ -92,29 +98,61 @@ pub fn parse_docker_containers() -> Result<Vec<DockerContainer>> {
 
     let content = String::from_utf8_lossy(&output.stdout);
     let mut containers: Vec<DockerContainer> = Vec::new();
+    let mut lines = content.lines();
 
-    for line in content.lines() {
+    let Some(header) = lines.next() else {
+        return Ok(containers);
+    };
+
+    let columns = [
+        "CONTAINER ID",
+        "IMAGE",
+        "COMMAND",
+        "CREATED",
+        "STATUS",
+        "PORTS",
+        "NAMES",
+    ];
+
+    // Get the index where each column starts
+    let starts: Vec<usize> = columns
+        .iter()
+        .filter_map(|name| header.find(name))
+        .collect();
+
+    fn field(line: &str, starts: &[usize], index: usize) -> String {
+        let Some(&start) = starts.get(index) else {
+            return String::new();
+        };
+
+        let end = starts.get(index + 1).copied().unwrap_or(line.len());
+
+        line.get(start..end).unwrap_or("").trim().to_string()
+    }
+
+    for line in lines {
         if line.trim().is_empty() {
             continue;
         }
+        let id = field(line, &starts, 0);
+        let image = field(line, &starts, 1);
+        let command = field(line, &starts, 2);
+        let created_at = field(line, &starts, 3);
+        let status_text = field(line, &starts, 4);
+        let ports = field(line, &starts, 5);
+        let name = field(line, &starts, 6);
+        let status = field(line, &starts, 4).contains("Up");
 
-        let mut parts = line.split('\t');
-
-        if let Some(raw_name) = parts.next() {
-            // return everything before the first ':' or the whole string
-            let name = raw_name.split(":").next().unwrap_or(raw_name);
-            containers.push(DockerContainer {
-                name: name.to_string(),
-                status: false,
-            });
-        }
-
-        if let Some(status) = parts.next() {
-            let Some(container) = containers.last_mut() else {
-                continue;
-            };
-            container.status = status.contains("Up");
-        }
+        containers.push(DockerContainer {
+            id,
+            name,
+            image,
+            command,
+            created_at,
+            status_text,
+            ports,
+            status,
+        });
     }
 
     Ok(containers)

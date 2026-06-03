@@ -11,5 +11,8 @@ fn main() -> anyhow::Result<()> {
     let hosts = parser::parse_ssh_config(&ssh_config_path)?;
     let containers = parser::parse_docker_containers()?;
 
+    dbg!(&containers);
+
+    // todo!();
     ui::run(hosts, containers)
 }

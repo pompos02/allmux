@@ -96,7 +96,16 @@ impl Entry {
                 host.user,
                 host.description.as_deref().unwrap_or_default()
             ),
-            Entry::Docker(container) => format!("{} {}", self.list_text(), container.status),
+            Entry::Docker(container) => format!(
+                "{} {} {} {} {} {} {}",
+                self.list_text(),
+                container.id,
+                container.image,
+                container.command,
+                container.created_at,
+                container.status_text,
+                container.ports
+            ),
         }
     }
 
@@ -142,6 +151,12 @@ impl Entry {
                 )),
                 Line::default(),
                 field_line("Name", &container.name, Color::Yellow),
+                field_line("ID", &container.id, Color::Cyan),
+                field_line("Image", &container.image, Color::Green),
+                field_line("Command", value_or_dash(&container.command), Color::Gray),
+                Line::default(),
+                field_line("Created", value_or_dash(&container.created_at), Color::Blue),
+                field_line("Ports", value_or_dash(&container.ports), Color::Magenta),
                 Line::default(),
                 Line::from(vec![
                     Span::styled(
@@ -166,6 +181,11 @@ impl Entry {
                             .add_modifier(Modifier::BOLD),
                     ),
                 ]),
+                field_line(
+                    "Details",
+                    value_or_dash(&container.status_text),
+                    Color::Gray,
+                ),
             ],
         }
     }

@@ -440,7 +440,7 @@ fn draw(frame: &mut ratatui::Frame, app: &mut App) {
             Constraint::Length(1),
         ])
         .split(area);
-let body = Layout::default()
+    let body = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
         .split(vertical[1]);
@@ -476,25 +476,6 @@ let body = Layout::default()
         })
         .collect();
 
-    let list = List::new(items)
-        .block(
-            Block::default()
-                .title(" Entries ")
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::DarkGray)),
-        )
-        .highlight_style(Style::default())
-        .highlight_symbol("> ");
-
-    let mut state = ListState::default();
-    if filtered.is_empty() {
-        state.select(None);
-    } else {
-        app.clamp_selection();
-        state.select(Some(app.selected));
-    }
-    frame.render_stateful_widget(list, body[0], &mut state);
-
     let preview = filtered
         .get(app.selected)
         .map(|matched| app.entries[matched.index].preview())
@@ -514,6 +495,36 @@ let body = Layout::default()
         )
         .wrap(Wrap { trim: false });
     frame.render_widget(preview, body[1]);
+
+    let test = filtered
+        .get(app.selected)
+        .map(|matched| app.entries[matched.index].clone())
+        .expect("error"); // TODO: fix this so we dont panic and crash
+    
+    // let mut border_color = Color::DarkGray;
+    let border_color = match test {
+        Entry::Ssh(_) =>  Color::Cyan,
+        Entry::Docker(_) => Color::Blue
+    };
+
+    let list = List::new(items)
+        .block(
+            Block::default()
+                .title(" Entries ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(border_color)),
+        )
+        .highlight_style(Style::default())
+        .highlight_symbol("> ");
+
+    let mut state = ListState::default();
+    if filtered.is_empty() {
+        state.select(None);
+    } else {
+        app.clamp_selection();
+        state.select(Some(app.selected));
+    }
+    frame.render_stateful_widget(list, body[0], &mut state);
 
     let (help_text, help_style) = if let Some(status) = &app.status_message {
         let color = match status.kind {
@@ -626,8 +637,7 @@ fn row_style(color: Color, selected: bool) -> Style {
 
 fn selected_style(style: Style, selected: bool) -> Style {
     if selected {
-        style.bg(Color::Gray)
-        .add_modifier(Modifier::BOLD)
+        style.bg(Color::Gray).add_modifier(Modifier::BOLD)
     } else {
         style
     }

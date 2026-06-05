@@ -448,8 +448,9 @@ let body = Layout::default()
     let filtered = app.filtered_matches();
 
     let query = app.query.clone();
-    let mut full_query = " > ".to_string();
-    full_query.push_str(&query);
+
+    let query_prefix = " > ".to_string();
+    let full_query = format!("{query_prefix}{query}");
 
     let search = Paragraph::new(full_query).block(
         Block::default()
@@ -461,7 +462,7 @@ let body = Layout::default()
     frame.set_cursor_position(Position::new(
         vertical[0]
             .x
-            .saturating_add(1)
+            .saturating_add((query_prefix.len() + 1) as u16)
             .saturating_add(app.query.chars().count() as u16),
         vertical[0].y.saturating_add(1),
     ));

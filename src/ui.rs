@@ -13,6 +13,7 @@ use ratatui::layout::{Constraint, Direction, Layout, Position};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
+use ratatui::prelude::Stylize;
 use std::io::{self, Write};
 use std::process::{Command, Stdio};
 
@@ -515,7 +516,7 @@ fn draw(frame: &mut ratatui::Frame, app: &mut App) {
                 .border_style(Style::default().fg(border_color)),
         )
         .highlight_style(Style::default())
-        .highlight_symbol("> ");
+        .highlight_symbol("▌ ").fg(border_color);
 
     let mut state = ListState::default();
     if filtered.is_empty() {

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-NETWORK="dockerman-test-net"
-LABEL="dockerman.test=true"
+NETWORK="allmux-net"
+LABEL="allmux-dev"
 
 case "${1:-}" in
   setup)

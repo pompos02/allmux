@@ -102,13 +102,16 @@ pub fn parse_docker_containers() -> Result<Vec<DockerContainer>> {
         .output()
         .context("Failed to execture docker command, is docker running?")?;
 
+    let mut containers: Vec<DockerContainer> = Vec::new();
+
     if !output.status.success() {
-        let error_msg = String::from_utf8_lossy(&output.stderr);
-        return Err(anyhow::anyhow!("Docker command failed {}", error_msg));
+        // for now we should just pass in the empty vector
+        return Ok(containers);
+        // let error_msg = String::from_utf8_lossy(&output.stderr);
+        // return Err(anyhow::anyhow!("Docker command failed {}", error_msg));
     }
 
     let content = String::from_utf8_lossy(&output.stdout);
-    let mut containers: Vec<DockerContainer> = Vec::new();
     let mut lines = content.lines();
 
     let Some(header) = lines.next() else {

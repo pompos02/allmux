@@ -167,25 +167,23 @@ impl Entry {
                             .add_modifier(Modifier::BOLD),
                     )),
                     Line::default(),
-                    field_line("Alias", &host.alias, Color::Yellow),
-                    active_tmux_line(host.is_active_tmux),
-                    field_line("Hostname", value_or_dash(&host.hostname), Color::Green),
-                    field_line("User", value_or_dash(&host.user), Color::Blue),
+                    field_line("Host:", value_or_dash(&host.alias), Color::default()),
+                    field_line("User:", value_or_dash(&host.user), Color::default()),
+                    field_line("Hostname:", value_or_dash(&host.hostname), Color::default()),
                     Line::default(),
                     Line::from(Span::styled(
-                        "Description",
+                        "Description:",
                         Style::default()
                             .fg(Color::Magenta)
                             .add_modifier(Modifier::BOLD),
                     )),
-                    Line::default(),
                 ];
 
                 let description = host.description.as_deref().unwrap_or("-").trim_end();
                 lines.extend(description.lines().map(|line| {
                     Line::from(Span::styled(
                         line.to_string(),
-                        Style::default().fg(Color::Gray),
+                        Style::default().fg(Color::Green),
                     ))
                 }));
                 lines
@@ -199,7 +197,6 @@ impl Entry {
                 )),
                 Line::default(),
                 field_line("Name", &container.name, Color::Yellow),
-                active_tmux_line(container.is_active_tmux),
                 field_line("ID", &container.id, Color::Cyan),
                 field_line("Image", &container.image, Color::Green),
                 field_line("Command", value_or_dash(&container.command), Color::Gray),
@@ -414,7 +411,9 @@ fn handle_key(key: KeyEvent, app: &mut App) -> KeyAction {
             };
         }
         KeyCode::Up => app.move_up(),
+        KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::CONTROL) => app.move_up(),
         KeyCode::Down => app.move_down(),
+        KeyCode::Char('j') if key.modifiers.contains(KeyModifiers::CONTROL) => app.move_down(),
         KeyCode::Backspace => {
             app.query.pop();
             app.clamp_selection();
@@ -441,14 +440,18 @@ fn draw(frame: &mut ratatui::Frame, app: &mut App) {
             Constraint::Length(1),
         ])
         .split(area);
-
-    let body = Layout::default()
+let body = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
         .split(vertical[1]);
 
     let filtered = app.filtered_matches();
-    let search = Paragraph::new(app.query.as_str()).block(
+
+    let query = app.query.clone();
+    let mut full_query = " > ".to_string();
+    full_query.push_str(&query);
+
+    let search = Paragraph::new(full_query).block(
         Block::default()
             .title("Search")
             .borders(Borders::ALL)
@@ -538,6 +541,7 @@ fn value_or_dash(value: &str) -> &str {
 }
 
 fn delete_previous_word(query: &mut String) {
+    // skip all the leading whitespaces
     while query
         .chars()
         .last()
@@ -578,20 +582,12 @@ fn field_line(label: &'static str, value: &str, value_color: Color) -> Line<'sta
         Span::styled(
             label,
             Style::default()
-                .fg(Color::DarkGray)
+                .fg(Color::Blue)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled("  ", Style::default()),
+        Span::styled(" ", Style::default()),
         Span::styled(value.to_string(), Style::default().fg(value_color)),
     ])
-}
-
-fn active_tmux_line(is_active: bool) -> Line<'static> {
-    field_line(
-        "Tmux",
-        if is_active { "active" } else { "inactive" },
-        if is_active { Color::Green } else { Color::DarkGray },
-    )
 }
 
 fn highlighted_text(
@@ -606,6 +602,7 @@ fn highlighted_text(
                 selected_style(
                     Style::default()
                         .fg(Color::Yellow)
+                        // .bg(Color::Blue)
                         .add_modifier(Modifier::BOLD),
                     selected,
                 )
@@ -629,7 +626,7 @@ fn row_style(color: Color, selected: bool) -> Style {
 fn selected_style(style: Style, selected: bool) -> Style {
     if selected {
         style.bg(Color::Gray)
-        // style.add_modifier(Modifier::BOLD)
+        .add_modifier(Modifier::BOLD)
     } else {
         style
     }

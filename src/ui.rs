@@ -9,11 +9,12 @@ use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
-use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::layout::{Constraint, Direction, Layout, Position};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
-use std::io;
+use std::io::{self, Write};
+use std::process::{Command, Stdio};
 
 #[derive(Debug, Clone)]
 enum Entry {
@@ -30,6 +31,17 @@ enum KeyAction {
     Continue,
     Quit,
     Select(UiAction),
+}
+
+enum StatusKind {
+    Success,
+    Warning,
+    Error,
+}
+
+struct StatusMessage {
+    text: String,
+    kind: StatusKind,
 }
 
 impl Entry {
@@ -232,6 +244,7 @@ struct App {
     entries: Vec<Entry>,
     query: String,
     selected: usize,
+    status_message: Option<StatusMessage>,
 }
 
 struct Match {
@@ -250,6 +263,7 @@ impl App {
             entries,
             query: String::new(),
             selected: 0,
+            status_message: None,
         }
     }
 
@@ -317,6 +331,17 @@ impl App {
             Entry::Docker(container) => Some(UiAction::LaunchDocker(container.name.clone())),
         }
     }
+
+    fn selected_ssh_hostname(&self) -> Option<String> {
+        let filtered = self.filtered_matches();
+        let matched = filtered.get(self.selected)?;
+
+        match &self.entries[matched.index] {
+            Entry::Ssh(host) if !host.hostname.is_empty() => Some(host.hostname.clone()),
+            Entry::Ssh(_) => None,
+            Entry::Docker(_) => None,
+        }
+    }
 }
 
 pub fn run(hosts: Vec<SshHost>, containers: Vec<DockerContainer>) -> Result<Option<UiAction>> {
@@ -366,15 +391,39 @@ fn handle_key(key: KeyEvent, app: &mut App) -> KeyAction {
                 return KeyAction::Select(action);
             }
         }
+        KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            delete_previous_word(&mut app.query);
+            app.clamp_selection();
+        }
+        KeyCode::Char('y') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.status_message = match app.selected_ssh_hostname() {
+                Some(hostname) => match copy_to_tmux_clipboard(&hostname) {
+                    Ok(()) => Some(StatusMessage {
+                        text: format!("Copied hostname: {hostname}"),
+                        kind: StatusKind::Success,
+                    }),
+                    Err(error) => Some(StatusMessage {
+                        text: format!("Failed to copy hostname: {error}"),
+                        kind: StatusKind::Error,
+                    }),
+                },
+                None => Some(StatusMessage {
+                    text: "Ctrl-Y only copies SSH entries with a hostname".to_string(),
+                    kind: StatusKind::Warning,
+                }),
+            };
+        }
         KeyCode::Up => app.move_up(),
         KeyCode::Down => app.move_down(),
         KeyCode::Backspace => {
             app.query.pop();
             app.clamp_selection();
+            app.status_message = None;
         }
         KeyCode::Char(c) => {
             app.query.push(c);
             app.selected = 0;
+            app.status_message = None;
         }
         _ => {}
     }
@@ -406,6 +455,13 @@ fn draw(frame: &mut ratatui::Frame, app: &mut App) {
             .border_style(Style::default().fg(Color::Blue)),
     );
     frame.render_widget(search, vertical[0]);
+    frame.set_cursor_position(Position::new(
+        vertical[0]
+            .x
+            .saturating_add(1)
+            .saturating_add(app.query.chars().count() as u16),
+        vertical[0].y.saturating_add(1),
+    ));
 
     let items: Vec<ListItem> = filtered
         .iter()
@@ -455,15 +511,66 @@ fn draw(frame: &mut ratatui::Frame, app: &mut App) {
         .wrap(Wrap { trim: false });
     frame.render_widget(preview, body[1]);
 
-    let help = Paragraph::new(
-        "Type to search | Up/Down to move | Enter to launch | Esc/Ctrl-C to quit | q quits when search is empty",
-    )
-    .style(Style::default().fg(Color::DarkGray));
+    let (help_text, help_style) = if let Some(status) = &app.status_message {
+        let color = match status.kind {
+            StatusKind::Success => Color::Green,
+            StatusKind::Warning => Color::Yellow,
+            StatusKind::Error => Color::Red,
+        };
+
+        (
+            status.text.as_str(),
+            Style::default().fg(color).add_modifier(Modifier::BOLD),
+        )
+    } else {
+        (
+            "Type to search | Up/Down to move | Enter to launch | Ctrl-Y to copy hostname | Esc/Ctrl-C to quit | q quits when search is empty",
+            Style::default().fg(Color::DarkGray),
+        )
+    };
+
+    let help = Paragraph::new(help_text).style(help_style);
     frame.render_widget(help, vertical[2]);
 }
 
 fn value_or_dash(value: &str) -> &str {
     if value.is_empty() { "-" } else { value }
+}
+
+fn delete_previous_word(query: &mut String) {
+    while query
+        .chars()
+        .last()
+        .is_some_and(|character| character.is_whitespace())
+    {
+        query.pop();
+    }
+
+    while query
+        .chars()
+        .last()
+        .is_some_and(|character| !character.is_whitespace())
+    {
+        query.pop();
+    }
+}
+
+fn copy_to_tmux_clipboard(value: &str) -> Result<()> {
+    let mut child = Command::new("tmux")
+        .args(["load-buffer", "-w", "-"])
+        .stdin(Stdio::piped())
+        .spawn()?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(value.as_bytes())?;
+    }
+
+    let status = child.wait()?;
+    if !status.success() {
+        anyhow::bail!("tmux load-buffer failed");
+    }
+
+    Ok(())
 }
 
 fn field_line(label: &'static str, value: &str, value_color: Color) -> Line<'static> {
@@ -521,7 +628,8 @@ fn row_style(color: Color, selected: bool) -> Style {
 
 fn selected_style(style: Style, selected: bool) -> Style {
     if selected {
-        style.bg(Color::Rgb(38, 38, 38))
+        style.bg(Color::Gray)
+        // style.add_modifier(Modifier::BOLD)
     } else {
         style
     }

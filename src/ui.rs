@@ -21,6 +21,17 @@ enum Entry {
     Docker(DockerContainer),
 }
 
+pub enum UiAction {
+    LaunchSsh(String),
+    LaunchDocker(String),
+}
+
+enum KeyAction {
+    Continue,
+    Quit,
+    Select(UiAction),
+}
+
 impl Entry {
     fn list_line(&self, matched_indices: &[usize], selected: bool) -> Line<'static> {
         match self {
@@ -36,6 +47,18 @@ impl Entry {
                     styled_gap("  ", selected),
                 ];
                 spans.extend(highlighted_text(&host.alias, matched_indices, 0, selected));
+                if host.is_active_tmux {
+                    spans.push(styled_gap(" ", selected));
+                    spans.push(Span::styled(
+                        "*",
+                        selected_style(
+                            Style::default()
+                                .fg(Color::Green)
+                                .add_modifier(Modifier::BOLD),
+                            selected,
+                        ),
+                    ));
+                }
                 spans.push(styled_gap("  ", selected));
                 spans.push(Span::styled(
                     host.hostname.clone(),
@@ -66,6 +89,18 @@ impl Entry {
                     0,
                     selected,
                 ));
+                if container.is_active_tmux {
+                    spans.push(styled_gap(" ", selected));
+                    spans.push(Span::styled(
+                        "*",
+                        selected_style(
+                            Style::default()
+                                .fg(Color::Green)
+                                .add_modifier(Modifier::BOLD),
+                            selected,
+                        ),
+                    ));
+                }
                 spans.push(styled_gap("  ", selected));
                 spans.push(Span::styled(
                     if container.status {
@@ -121,6 +156,7 @@ impl Entry {
                     )),
                     Line::default(),
                     field_line("Alias", &host.alias, Color::Yellow),
+                    active_tmux_line(host.is_active_tmux),
                     field_line("Hostname", value_or_dash(&host.hostname), Color::Green),
                     field_line("User", value_or_dash(&host.user), Color::Blue),
                     Line::default(),
@@ -151,6 +187,7 @@ impl Entry {
                 )),
                 Line::default(),
                 field_line("Name", &container.name, Color::Yellow),
+                active_tmux_line(container.is_active_tmux),
                 field_line("ID", &container.id, Color::Cyan),
                 field_line("Image", &container.image, Color::Green),
                 field_line("Command", value_or_dash(&container.command), Color::Gray),
@@ -270,9 +307,19 @@ impl App {
             self.selected += 1;
         }
     }
+
+    fn selected_action(&self) -> Option<UiAction> {
+        let filtered = self.filtered_matches();
+        let matched = filtered.get(self.selected)?;
+
+        match &self.entries[matched.index] {
+            Entry::Ssh(host) => Some(UiAction::LaunchSsh(host.alias.clone())),
+            Entry::Docker(container) => Some(UiAction::LaunchDocker(container.name.clone())),
+        }
+    }
 }
 
-pub fn run(hosts: Vec<SshHost>, containers: Vec<DockerContainer>) -> Result<()> {
+pub fn run(hosts: Vec<SshHost>, containers: Vec<DockerContainer>) -> Result<Option<UiAction>> {
     enable_raw_mode()?;
 
     let mut stdout = io::stdout();
@@ -290,25 +337,35 @@ pub fn run(hosts: Vec<SshHost>, containers: Vec<DockerContainer>) -> Result<()> 
     result
 }
 
-fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, mut app: App) -> Result<()> {
+fn run_app(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    mut app: App,
+) -> Result<Option<UiAction>> {
     loop {
         terminal.draw(|frame| draw(frame, &mut app))?;
 
         if let Event::Key(key) = event::read()? {
-            if handle_key(key, &mut app) {
-                break;
+            match handle_key(key, &mut app) {
+                KeyAction::Continue => {}
+                KeyAction::Quit => return Ok(None),
+                KeyAction::Select(action) => return Ok(Some(action)),
             }
         }
     }
-
-    Ok(())
 }
 
-fn handle_key(key: KeyEvent, app: &mut App) -> bool {
+fn handle_key(key: KeyEvent, app: &mut App) -> KeyAction {
     match key.code {
-        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return true,
-        KeyCode::Char('q') if app.query.is_empty() => return true,
-        KeyCode::Esc => return true,
+        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            return KeyAction::Quit;
+        }
+        KeyCode::Char('q') if app.query.is_empty() => return KeyAction::Quit,
+        KeyCode::Esc => return KeyAction::Quit,
+        KeyCode::Enter => {
+            if let Some(action) = app.selected_action() {
+                return KeyAction::Select(action);
+            }
+        }
         KeyCode::Up => app.move_up(),
         KeyCode::Down => app.move_down(),
         KeyCode::Backspace => {
@@ -322,7 +379,7 @@ fn handle_key(key: KeyEvent, app: &mut App) -> bool {
         _ => {}
     }
 
-    false
+    KeyAction::Continue
 }
 
 fn draw(frame: &mut ratatui::Frame, app: &mut App) {
@@ -399,7 +456,7 @@ fn draw(frame: &mut ratatui::Frame, app: &mut App) {
     frame.render_widget(preview, body[1]);
 
     let help = Paragraph::new(
-        "Type to search | Up/Down to move | Esc/Ctrl-C to quit | q quits when search is empty",
+        "Type to search | Up/Down to move | Enter to launch | Esc/Ctrl-C to quit | q quits when search is empty",
     )
     .style(Style::default().fg(Color::DarkGray));
     frame.render_widget(help, vertical[2]);
@@ -420,6 +477,14 @@ fn field_line(label: &'static str, value: &str, value_color: Color) -> Line<'sta
         Span::styled("  ", Style::default()),
         Span::styled(value.to_string(), Style::default().fg(value_color)),
     ])
+}
+
+fn active_tmux_line(is_active: bool) -> Line<'static> {
+    field_line(
+        "Tmux",
+        if is_active { "active" } else { "inactive" },
+        if is_active { Color::Green } else { Color::DarkGray },
+    )
 }
 
 fn highlighted_text(

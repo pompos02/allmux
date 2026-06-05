@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+use crate::tmux;
 
 #[derive(Debug, Clone)]
 pub struct SshHost {
@@ -9,6 +10,7 @@ pub struct SshHost {
     pub hostname: String,
     pub user: String,
     pub description: Option<String>,
+    pub is_active_tmux: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -21,6 +23,7 @@ pub struct DockerContainer {
     pub status_text: String,
     pub ports: String,
     pub status: bool,
+    pub is_active_tmux: bool,
 }
 
 pub fn parse_ssh_config(path: &Path) -> Result<Vec<SshHost>> {
@@ -66,6 +69,7 @@ pub fn parse_ssh_config(path: &Path) -> Result<Vec<SshHost>> {
                     hostname: String::new(),
                     user: String::new(),
                     description: current_description.take(),
+                    is_active_tmux: false,
                 });
             }
             "hostname" => {
@@ -79,6 +83,13 @@ pub fn parse_ssh_config(path: &Path) -> Result<Vec<SshHost>> {
                 }
             }
             _ => {}
+        }
+    }
+
+    let tmux_sessions = tmux::tmux_sessions()?;
+    for host in &mut hosts {
+        if tmux_sessions.contains(&host.alias) {
+            host.is_active_tmux = true;
         }
     }
 
@@ -152,8 +163,17 @@ pub fn parse_docker_containers() -> Result<Vec<DockerContainer>> {
             status_text,
             ports,
             status,
+            is_active_tmux: false,
         });
     }
+
+    let tmux_sessions = tmux::tmux_sessions()?;
+    for container in &mut containers {
+        if tmux_sessions.contains(&container.name) {
+            container.is_active_tmux = true;
+        }
+    }
+
 
     Ok(containers)
 }

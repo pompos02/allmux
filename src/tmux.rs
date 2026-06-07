@@ -17,7 +17,6 @@ pub fn launch_docker_session(container_name: &str) -> Result<()> {
     goto_session(container_name)
 }
 
-
 pub fn tmux_sessions() -> Result<Vec<String>> {
     let output = Command::new("tmux")
         .args(["list-sessions", "-F", "#{session_name}"])
@@ -36,7 +35,6 @@ pub fn tmux_sessions() -> Result<Vec<String>> {
 
     Ok(sessions)
 }
-
 
 fn goto_session(name: &str) -> Result<()> {
     let status = Command::new("tmux")
@@ -122,4 +120,3 @@ fn tmux_has_session(session_name: &str) -> Result<bool> {
 
     Ok(status.success())
 }
-

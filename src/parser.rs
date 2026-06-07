@@ -1,8 +1,8 @@
+use crate::tmux;
 use anyhow::{Context, Result};
 use std::fs;
 use std::path::Path;
 use std::process::Command;
-use crate::tmux;
 
 #[derive(Debug, Clone)]
 pub struct SshHost {
@@ -176,7 +176,6 @@ pub fn parse_docker_containers() -> Result<Vec<DockerContainer>> {
             container.is_active_tmux = true;
         }
     }
-
 
     Ok(containers)
 }

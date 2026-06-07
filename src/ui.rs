@@ -9,11 +9,11 @@ use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
-use ratatui::layout::{Constraint, Direction, Layout, Position};
+use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
+use ratatui::prelude::Stylize;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
-use ratatui::prelude::Stylize;
 use std::io::{self, Write};
 use std::process::{Command, Stdio};
 
@@ -433,40 +433,12 @@ fn handle_key(key: KeyEvent, app: &mut App) -> KeyAction {
 
 fn draw(frame: &mut ratatui::Frame, app: &mut App) {
     let area = frame.area();
-    let vertical = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Min(0),
-            Constraint::Length(1),
-        ])
-        .split(area);
-    let body = Layout::default()
+    let panes = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
-        .split(vertical[1]);
+        .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+        .split(area);
 
     let filtered = app.filtered_matches();
-
-    let query = app.query.clone();
-
-    let query_prefix = " > ".to_string();
-    let full_query = format!("{query_prefix}{query}");
-
-    let search = Paragraph::new(full_query).block(
-        Block::default()
-            .title("Search")
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Blue)),
-    );
-    frame.render_widget(search, vertical[0]);
-    frame.set_cursor_position(Position::new(
-        vertical[0]
-            .x
-            .saturating_add((query_prefix.len() + 1) as u16)
-            .saturating_add(app.query.chars().count() as u16),
-        vertical[0].y.saturating_add(1),
-    ));
 
     let items: Vec<ListItem> = filtered
         .iter()
@@ -476,6 +448,80 @@ fn draw(frame: &mut ratatui::Frame, app: &mut App) {
             ListItem::new(entry.list_line(&matched.indices, row == app.selected))
         })
         .collect();
+
+    // get the current entry so we can see what type it is.
+    // TODO: this could be more efficient
+    let border_color = filtered
+        .get(app.selected)
+        .map(|matched| match &app.entries[matched.index] {
+            Entry::Ssh(_) => Color::Cyan,
+            Entry::Docker(_) => Color::Blue,
+        })
+        .unwrap_or(Color::DarkGray);
+
+    let left_block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(border_color));
+    let left_inner = left_block.inner(panes[0]);
+    frame.render_widget(left_block, panes[0]);
+
+    let left_sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(0),
+            Constraint::Length(visible_list_height(left_inner, items.len())),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ])
+        .split(left_inner);
+
+    let list = List::new(items)
+        .highlight_style(Style::default())
+        .highlight_symbol("▌ ")
+        .fg(border_color);
+
+    let mut state = ListState::default();
+    if filtered.is_empty() {
+        state.select(None);
+    } else {
+        app.clamp_selection();
+        state.select(Some(app.selected));
+    }
+    frame.render_stateful_widget(list, left_sections[1], &mut state);
+
+    let divider = Paragraph::new("").block(
+        Block::default()
+            .borders(Borders::TOP)
+            .border_style(Style::default().fg(Color::DarkGray)),
+    );
+    frame.render_widget(divider, left_sections[2]);
+
+    let (prompt_text, prompt_style) = if let Some(status) = &app.status_message {
+        let color = match status.kind {
+            StatusKind::Success => Color::Green,
+            StatusKind::Warning => Color::Yellow,
+            StatusKind::Error => Color::Red,
+        };
+
+        (
+            status.text.clone(),
+            Style::default().fg(color).add_modifier(Modifier::BOLD),
+        )
+    } else {
+        (format!("> {}", app.query), Style::default().fg(Color::Blue))
+    };
+
+    let prompt = Paragraph::new(prompt_text).style(prompt_style);
+    frame.render_widget(prompt, left_sections[3]);
+    if app.status_message.is_none() {
+        frame.set_cursor_position(Position::new(
+            left_sections[3]
+                .x
+                .saturating_add(2)
+                .saturating_add(app.query.chars().count() as u16),
+            left_sections[3].y,
+        ));
+    }
 
     let preview = filtered
         .get(app.selected)
@@ -490,62 +536,17 @@ fn draw(frame: &mut ratatui::Frame, app: &mut App) {
     let preview = Paragraph::new(preview)
         .block(
             Block::default()
-                .title(" Preview ")
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::DarkGray)),
         )
         .wrap(Wrap { trim: false });
-    frame.render_widget(preview, body[1]);
+    frame.render_widget(preview, panes[1]);
+}
 
-    // get the current entry so we can see what type it is.
-    // TODO: this could be more efficient
-    let border_color = filtered
-        .get(app.selected)
-        .map(|matched| match &app.entries[matched.index] {
-            Entry::Ssh(_) =>  Color::Cyan,
-            Entry::Docker(_) => Color::Blue
-        })
-        .unwrap_or(Color::DarkGray);
-
-    let list = List::new(items)
-        .block(
-            Block::default()
-                .title(" Entries ")
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(border_color)),
-        )
-        .highlight_style(Style::default())
-        .highlight_symbol("▌ ").fg(border_color);
-
-    let mut state = ListState::default();
-    if filtered.is_empty() {
-        state.select(None);
-    } else {
-        app.clamp_selection();
-        state.select(Some(app.selected));
-    }
-    frame.render_stateful_widget(list, body[0], &mut state);
-
-    let (help_text, help_style) = if let Some(status) = &app.status_message {
-        let color = match status.kind {
-            StatusKind::Success => Color::Green,
-            StatusKind::Warning => Color::Yellow,
-            StatusKind::Error => Color::Red,
-        };
-
-        (
-            status.text.as_str(),
-            Style::default().fg(color).add_modifier(Modifier::BOLD),
-        )
-    } else {
-        (
-            "Type to search | Up/Down to move | Enter to launch | Ctrl-Y to copy hostname | Esc/Ctrl-C to quit | q quits when search is empty",
-            Style::default().fg(Color::DarkGray),
-        )
-    };
-
-    let help = Paragraph::new(help_text).style(help_style);
-    frame.render_widget(help, vertical[2]);
+fn visible_list_height(area: Rect, item_count: usize) -> u16 {
+    let reserved_rows = 2;
+    let available_rows = area.height.saturating_sub(reserved_rows);
+    available_rows.min(item_count as u16)
 }
 
 fn value_or_dash(value: &str) -> &str {

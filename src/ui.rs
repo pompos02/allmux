@@ -497,13 +497,16 @@ fn draw(frame: &mut ratatui::Frame, app: &mut App) {
         .wrap(Wrap { trim: false });
     frame.render_widget(preview, body[1]);
 
-    let test = filtered
+    // get the current entry so we can see what type it is.
+    // TODO: this could be more efficient
+    let entry = filtered
         .get(app.selected)
         .map(|matched| app.entries[matched.index].clone())
-        .expect("error"); // TODO: fix this so we dont panic and crash
+        .expect("Error getting the current entry"); // TODO: fix this
     
-    // let mut border_color = Color::DarkGray;
-    let border_color = match test {
+    let border_color = match entry {
+
+
         Entry::Ssh(_) =>  Color::Cyan,
         Entry::Docker(_) => Color::Blue
     };

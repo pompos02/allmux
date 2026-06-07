@@ -499,17 +499,13 @@ fn draw(frame: &mut ratatui::Frame, app: &mut App) {
 
     // get the current entry so we can see what type it is.
     // TODO: this could be more efficient
-    let entry = filtered
+    let border_color = filtered
         .get(app.selected)
-        .map(|matched| app.entries[matched.index].clone())
-        .expect("Error getting the current entry"); // TODO: fix this
-    
-    let border_color = match entry {
-
-
-        Entry::Ssh(_) =>  Color::Cyan,
-        Entry::Docker(_) => Color::Blue
-    };
+        .map(|matched| match &app.entries[matched.index] {
+            Entry::Ssh(_) =>  Color::Cyan,
+            Entry::Docker(_) => Color::Blue
+        })
+        .unwrap_or(Color::DarkGray);
 
     let list = List::new(items)
         .block(

@@ -1,19 +1,22 @@
 use anyhow::{Context, Result};
 use std::process::Command;
 
-pub fn launch_ssh_session(alias: &str) -> Result<()> {
-    if !tmux_has_session(alias)? {
+pub fn launch_ssh_session(alias: &str, active_sessions: &[String]) -> Result<()> {
+
+    if active_sessions.contains(&alias.to_owned()) {
         let pane_target = new_session(alias)?;
         send_ssh_command(&pane_target, alias)?;
-    }
+    }   
+
     goto_session(alias)
 }
 
-pub fn launch_docker_session(container_name: &str) -> Result<()> {
-    if !tmux_has_session(container_name)? {
+pub fn launch_docker_session(container_name: &str, active_sessions: &[String]) -> Result<()> {
+    if active_sessions.contains(&container_name.to_owned()) {
         let pane_target = new_session(container_name)?;
-        send_docker_command(&pane_target, container_name)?;
-    }
+        send_ssh_command(&pane_target, container_name)?;
+    }   
+
     goto_session(container_name)
 }
 
@@ -112,11 +115,12 @@ fn new_session(name: &str) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
-fn tmux_has_session(session_name: &str) -> Result<bool> {
+pub fn tmux_has_session(session_name: &str) -> Result<bool> {
     let status = Command::new("tmux")
         .args(["has-session", "-t", session_name])
         .status()
         .context("failed to check tmux session")?;
 
+    println!("Here we are man dont be shy {}", status.success());
     Ok(status.success())
 }

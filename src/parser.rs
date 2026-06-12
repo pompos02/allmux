@@ -1,4 +1,5 @@
 use crate::tmux;
+use crate::tmux::{tmux_has_session, tmux_sessions};
 use anyhow::{Context, Result};
 use std::fs;
 use std::path::Path;
@@ -24,6 +25,114 @@ pub struct DockerContainer {
     pub ports: String,
     pub status: bool,
     pub is_active_tmux: bool,
+}
+
+// Holds the active sessions and paths defined that are no sessions yet
+#[derive(Debug, Clone)]
+pub struct TmuxSession {
+    pub full_path: Option<String>,
+    pub session_name: String,
+    pub is_active: bool,
+}
+
+impl TmuxSession {
+    fn new(full_path: &str, session_name: &str) -> TmuxSession {
+        TmuxSession {
+            full_path: Some(full_path.to_owned()),
+            session_name: session_name.to_owned(),
+            is_active: false,
+        }
+    }
+}
+
+/// Paths that will be used to in the list with depth = 1
+static TMUX_PATHS: &[&str] = &[
+    "", // home directory
+    "projects",
+    "projects/personal",
+    "projects/opensource",
+    "training",
+    "repos",
+    "projects/misc",
+];
+
+// Get the filename of the fullpath
+fn basename(path: &Path) -> String {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("")
+        .to_string()
+}
+
+/// Returns the: paths that the `TMUX_PATHS` **Global** defines,
+/// their children, and the basedir name as tuple
+fn tmux_dirs(paths: &[&str]) -> Vec<(String, String)> {
+    let home_path = dirs::home_dir().unwrap_or_default();
+    let mut tmux_path_tuple: Vec<(String, String)> = Vec::new();
+
+    for path in paths {
+        let full_path = home_path.join(path);
+
+        // Just skip if the path is not valid
+        let Ok(entries) = fs::read_dir(&full_path) else {
+            continue;
+        };
+
+        tmux_path_tuple.push((
+            full_path.to_string_lossy().to_string(),
+            basename(&full_path),
+        ));
+
+        for entry in entries.flatten() {
+            let child_path = entry.path();
+            if child_path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with('.'))
+            {
+                continue;
+            }
+
+            if child_path.is_dir() {
+                tmux_path_tuple.push((
+                    child_path.to_string_lossy().to_string(),
+                    basename(&child_path),
+                ));
+            }
+        }
+    }
+
+    tmux_path_tuple
+}
+
+pub fn tmux_paths_and_sessions() -> Result<Vec<TmuxSession>> {
+    let dirs_tuple = tmux_dirs(TMUX_PATHS);
+
+    let mut tmux_sessions_and_paths: Vec<TmuxSession> = Vec::new();
+    let active_sessions = tmux_sessions()?;
+
+    // push the dirs into the tmux array
+    for (full_path, basename) in dirs_tuple {
+        let mut entry = TmuxSession {
+            full_path: Some(full_path),
+            session_name: basename.clone(),
+            is_active: false,
+        };
+
+        if active_sessions.contains(&basename) {
+            entry.is_active = true
+        }
+
+        tmux_sessions_and_paths.push(entry);
+    }
+
+    for active_session in tmux_sessions()? {
+        tmux_sessions_and_paths.push(
+            TmuxSession { full_path: None, session_name: active_session, is_active: true }
+        )
+    }
+
+    Ok(tmux_sessions_and_paths)
 }
 
 pub fn parse_ssh_config(path: &Path) -> Result<Vec<SshHost>> {

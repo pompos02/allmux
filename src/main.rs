@@ -2,7 +2,9 @@ mod parser;
 mod tmux;
 mod ui;
 
+
 use std::path::Path;
+use crate::tmux::tmux_sessions;
 
 fn main() -> anyhow::Result<()> {
     let ssh_config_path = dirs::home_dir()
@@ -11,12 +13,15 @@ fn main() -> anyhow::Result<()> {
 
     let hosts = parser::parse_ssh_config(&ssh_config_path)?;
     let containers = parser::parse_docker_containers()?;
+    let tmux_paths = parser::tmux_paths_and_sessions()?;
+    let active_tmux_sessions = tmux_sessions()?;
+    dbg!(tmux_paths);
 
     if let Some(action) = ui::run(hosts, containers)? {
         match action {
-            ui::UiAction::LaunchSsh(alias) => tmux::launch_ssh_session(&alias)?,
+            ui::UiAction::LaunchSsh(alias) => tmux::launch_ssh_session(&alias, &active_tmux_sessions)?,
             ui::UiAction::LaunchDocker(container_name) => {
-                tmux::launch_docker_session(&container_name)?
+                tmux::launch_docker_session(&container_name, &active_tmux_sessions)?
             }
         }
     }

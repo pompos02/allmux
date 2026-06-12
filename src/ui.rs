@@ -1,4 +1,4 @@
-use crate::parser::{DockerContainer, SshHost};
+use crate::parser::{DockerContainer, SshHost, TmuxSession};
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 use crossterm::execute;
@@ -21,11 +21,13 @@ use std::process::{Command, Stdio};
 enum Entry {
     Ssh(SshHost),
     Docker(DockerContainer),
+    Tmux(TmuxSession),
 }
 
 pub enum UiAction {
     LaunchSsh(String),
     LaunchDocker(String),
+    LaunchTmux(String),
 }
 
 enum KeyAction {
@@ -48,6 +50,49 @@ struct StatusMessage {
 impl Entry {
     fn list_line(&self, matched_indices: &[usize], selected: bool) -> Line<'static> {
         match self {
+            Entry::Tmux(session) => {
+                let mut spans = vec![
+                    Span::styled(
+                        " MUX ",
+                        Style::default()
+                            .fg(Color::Black)
+                            .bg(Color::Green)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    styled_gap("  ", selected),
+                ];
+
+                if session.is_active {
+                    spans.extend(highlighted_text(
+                        &session.session_name,
+                        matched_indices,
+                        0,
+                        selected,
+                    ));
+                    spans.push(styled_gap(" ", selected));
+                    spans.push(Span::styled(
+                        "*",
+                        selected_style(
+                            Style::default()
+                                .fg(Color::Green)
+                                .add_modifier(Modifier::BOLD),
+                            selected,
+                        ),
+                    ));
+                } else {
+                    spans.extend(highlighted_text(
+                        // TODO handle this expect
+                        session.full_path.as_ref().expect("full_path ca't be None here"),
+                        matched_indices,
+                        0,
+                        selected,
+                    ));
+                    spans.push(styled_gap(" ", selected));
+                }
+                spans.push(styled_gap("  ", selected));
+                Line::from(spans)
+            }
+
             Entry::Ssh(host) => {
                 let mut spans = vec![
                     Span::styled(
@@ -132,11 +177,17 @@ impl Entry {
         match self {
             Entry::Ssh(host) => host.alias.clone(),
             Entry::Docker(container) => container.name.clone(),
+            Entry::Tmux(tmux_session) => tmux_session.session_name.clone(),
         }
     }
 
     fn haystack(&self) -> String {
         match self {
+            Entry::Tmux(tmux_session) => format!(
+                "{} {}",
+                tmux_session.session_name, "TODO: place holder there should be the path?"
+            ),
+
             Entry::Ssh(host) => format!(
                 "{} {} {} {}",
                 self.list_text(),
@@ -159,6 +210,31 @@ impl Entry {
 
     fn preview(&self) -> Vec<Line<'static>> {
         match self {
+            Entry::Tmux(session) => {
+                let mut lines = vec![
+                    Line::from(Span::styled(
+                        "Tmux Session",
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD),
+                    )),
+                    Line::default(),
+                    field_line(
+                        "TODO:",
+                        "we should show something like ls -la",
+                        Color::default(),
+                    ),
+                    Line::default(),
+                    Line::from(Span::styled(
+                        "Description:",
+                        Style::default()
+                            .fg(Color::Magenta)
+                            .add_modifier(Modifier::BOLD),
+                    )),
+                ];
+
+                lines
+            }
             Entry::Ssh(host) => {
                 let mut lines = vec![
                     Line::from(Span::styled(
@@ -252,10 +328,15 @@ struct Match {
 }
 
 impl App {
-    fn new(hosts: Vec<SshHost>, containers: Vec<DockerContainer>) -> Self {
-        let mut entries = Vec::with_capacity(hosts.len() + containers.len());
+    fn new(
+        hosts: Vec<SshHost>,
+        containers: Vec<DockerContainer>,
+        tmux_sessions: Vec<TmuxSession>,
+    ) -> Self {
+        let mut entries = Vec::with_capacity(hosts.len() + containers.len() + tmux_sessions.len());
         entries.extend(hosts.into_iter().map(Entry::Ssh));
         entries.extend(containers.into_iter().map(Entry::Docker));
+        entries.extend(tmux_sessions.into_iter().map(Entry::Tmux));
 
         Self {
             entries,
@@ -325,6 +406,7 @@ impl App {
         let matched = filtered.get(self.selected)?;
 
         match &self.entries[matched.index] {
+            Entry::Tmux(session) => Some(UiAction::LaunchTmux(session.session_name.clone())),
             Entry::Ssh(host) => Some(UiAction::LaunchSsh(host.alias.clone())),
             Entry::Docker(container) => Some(UiAction::LaunchDocker(container.name.clone())),
         }
@@ -335,14 +417,20 @@ impl App {
         let matched = filtered.get(self.selected)?;
 
         match &self.entries[matched.index] {
+            // TODO: figure out what is happening in here
             Entry::Ssh(host) if !host.hostname.is_empty() => Some(host.hostname.clone()),
             Entry::Ssh(_) => None,
             Entry::Docker(_) => None,
+            Entry::Tmux(_) => None,
         }
     }
 }
 
-pub fn run(hosts: Vec<SshHost>, containers: Vec<DockerContainer>) -> Result<Option<UiAction>> {
+pub fn run(
+    hosts: Vec<SshHost>,
+    containers: Vec<DockerContainer>,
+    tmux_sessions: Vec<TmuxSession>,
+) -> Result<Option<UiAction>> {
     enable_raw_mode()?;
 
     let mut stdout = io::stdout();
@@ -351,7 +439,7 @@ pub fn run(hosts: Vec<SshHost>, containers: Vec<DockerContainer>) -> Result<Opti
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let result = run_app(&mut terminal, App::new(hosts, containers));
+    let result = run_app(&mut terminal, App::new(hosts, containers, tmux_sessions));
 
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
@@ -456,6 +544,7 @@ fn draw(frame: &mut ratatui::Frame, app: &mut App) {
         .map(|matched| match &app.entries[matched.index] {
             Entry::Ssh(_) => Color::Cyan,
             Entry::Docker(_) => Color::Blue,
+            Entry::Tmux(_) => Color::Green,
         })
         .unwrap_or(Color::DarkGray);
 

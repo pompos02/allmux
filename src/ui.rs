@@ -3,17 +3,17 @@ use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 use crossterm::execute;
 use crossterm::terminal::{
-    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
-use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
-use ratatui::Terminal;
+use fuzzy_matcher::FuzzyMatcher;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
 use ratatui::prelude::Stylize;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
+use ratatui::Terminal;
 use std::io::{self, Write};
 use std::process::{Command, Stdio};
 
@@ -51,6 +51,9 @@ impl Entry {
     fn list_line(&self, matched_indices: &[usize], selected: bool) -> Line<'static> {
         match self {
             Entry::Tmux(session) => {
+                let search_fields = tmux_search_fields(session);
+                let display_text = search_fields[0];
+                let display_offset = search_field_offset(&search_fields, 0);
                 let mut spans = vec![
                     Span::styled(
                         " MUX ",
@@ -64,10 +67,11 @@ impl Entry {
 
                 if session.is_active {
                     spans.extend(highlighted_text(
-                        &session.session_name,
+                        display_text,
                         matched_indices,
-                        0,
+                        display_offset,
                         selected,
+                        Style::default().fg(Color::White),
                     ));
                     spans.push(styled_gap(" ", selected));
                     spans.push(Span::styled(
@@ -81,11 +85,11 @@ impl Entry {
                     ));
                 } else {
                     spans.extend(highlighted_text(
-                        // TODO handle this expect
-                        session.full_path.as_ref().expect("full_path ca't be None here"),
+                        display_text,
                         matched_indices,
-                        0,
+                        display_offset,
                         selected,
+                        Style::default().fg(Color::White),
                     ));
                     spans.push(styled_gap(" ", selected));
                 }
@@ -94,6 +98,7 @@ impl Entry {
             }
 
             Entry::Ssh(host) => {
+                let search_fields = ssh_search_fields(host);
                 let mut spans = vec![
                     Span::styled(
                         " SSH ",
@@ -104,7 +109,13 @@ impl Entry {
                     ),
                     styled_gap("  ", selected),
                 ];
-                spans.extend(highlighted_text(&host.alias, matched_indices, 0, selected));
+                spans.extend(highlighted_text(
+                    &host.alias,
+                    matched_indices,
+                    search_field_offset(&search_fields, 0),
+                    selected,
+                    Style::default().fg(Color::White),
+                ));
                 if host.is_active_tmux {
                     spans.push(styled_gap(" ", selected));
                     spans.push(Span::styled(
@@ -118,13 +129,17 @@ impl Entry {
                     ));
                 }
                 spans.push(styled_gap("  ", selected));
-                spans.push(Span::styled(
-                    host.hostname.clone(),
-                    row_style(Color::DarkGray, selected),
+                spans.extend(highlighted_text(
+                    &host.hostname,
+                    matched_indices,
+                    search_field_offset(&search_fields, 1),
+                    selected,
+                    Style::default().fg(Color::DarkGray),
                 ));
                 Line::from(spans)
             }
             Entry::Docker(container) => {
+                let search_fields = docker_search_fields(container);
                 let status_style = if container.status {
                     Style::default().fg(Color::Green)
                 } else {
@@ -144,8 +159,9 @@ impl Entry {
                 spans.extend(highlighted_text(
                     &container.name,
                     matched_indices,
-                    0,
+                    search_field_offset(&search_fields, 0),
                     selected,
+                    Style::default().fg(Color::White),
                 ));
                 if container.is_active_tmux {
                     spans.push(styled_gap(" ", selected));
@@ -160,58 +176,34 @@ impl Entry {
                     ));
                 }
                 spans.push(styled_gap("  ", selected));
-                spans.push(Span::styled(
-                    if container.status {
-                        "running"
-                    } else {
-                        "stopped"
-                    },
-                    selected_style(status_style, selected),
+                spans.extend(highlighted_text(
+                    docker_status_label(container),
+                    matched_indices,
+                    search_field_offset(&search_fields, 1),
+                    selected,
+                    status_style,
                 ));
                 Line::from(spans)
             }
         }
     }
 
-    fn list_text(&self) -> String {
+    fn search_fields(&self) -> Vec<&str> {
         match self {
-            Entry::Ssh(host) => host.alias.clone(),
-            Entry::Docker(container) => container.name.clone(),
-            Entry::Tmux(tmux_session) => tmux_session.session_name.clone(),
+            Entry::Ssh(host) => ssh_search_fields(host),
+            Entry::Docker(container) => docker_search_fields(container),
+            Entry::Tmux(session) => tmux_search_fields(session),
         }
     }
 
-    fn haystack(&self) -> String {
-        match self {
-            Entry::Tmux(tmux_session) => format!(
-                "{} {}",
-                tmux_session.session_name, "TODO: place holder there should be the path?"
-            ),
-
-            Entry::Ssh(host) => format!(
-                "{} {} {} {}",
-                self.list_text(),
-                host.hostname,
-                host.user,
-                host.description.as_deref().unwrap_or_default()
-            ),
-            Entry::Docker(container) => format!(
-                "{} {} {} {} {} {} {}",
-                self.list_text(),
-                container.id,
-                container.image,
-                container.command,
-                container.created_at,
-                container.status_text,
-                container.ports
-            ),
-        }
+    fn search_text(&self) -> String {
+        join_search_fields(&self.search_fields())
     }
 
     fn preview(&self) -> Vec<Line<'static>> {
         match self {
-            Entry::Tmux(session) => {
-                let mut lines = vec![
+            Entry::Tmux(_) => {
+                let lines = vec![
                     Line::from(Span::styled(
                         "Tmux Session",
                         Style::default()
@@ -327,6 +319,8 @@ struct Match {
     indices: Vec<usize>,
 }
 
+const MATCH_HIGHLIGHT_BG: Color = Color::Rgb(94, 241, 255);
+
 impl App {
     fn new(
         hosts: Vec<SshHost>,
@@ -363,7 +357,7 @@ impl App {
                 }
 
                 matcher
-                    .fuzzy_indices(&entry.haystack(), &self.query)
+                    .fuzzy_indices(&entry.search_text(), &self.query)
                     .map(|(score, indices)| Match {
                         index,
                         score,
@@ -639,7 +633,81 @@ fn visible_list_height(area: Rect, item_count: usize) -> u16 {
 }
 
 fn value_or_dash(value: &str) -> &str {
-    if value.is_empty() { "-" } else { value }
+    if value.is_empty() {
+        "-"
+    } else {
+        value
+    }
+}
+
+fn ssh_search_fields(host: &SshHost) -> Vec<&str> {
+    vec![
+        &host.alias,
+        &host.hostname,
+        &host.user,
+        host.description.as_deref().unwrap_or_default(),
+    ]
+}
+
+fn docker_search_fields(container: &DockerContainer) -> Vec<&str> {
+    vec![
+        &container.name,
+        docker_status_label(container),
+        &container.status_text,
+        &container.id,
+        &container.image,
+        &container.command,
+        &container.created_at,
+        &container.ports,
+    ]
+}
+
+fn tmux_search_fields(session: &TmuxSession) -> Vec<&str> {
+    let display_text = tmux_display_text(session);
+    let mut fields = vec![display_text];
+
+    if display_text != session.session_name && !display_text.contains(&session.session_name) {
+        fields.push(&session.session_name);
+    }
+
+    if let Some(full_path) = session.full_path.as_deref() {
+        if full_path != display_text {
+            fields.push(full_path);
+        }
+    }
+
+    fields
+}
+
+fn tmux_display_text(session: &TmuxSession) -> &str {
+    if session.is_active {
+        &session.session_name
+    } else {
+        session
+            .full_path
+            .as_deref()
+            .unwrap_or(&session.session_name)
+    }
+}
+
+fn docker_status_label(container: &DockerContainer) -> &'static str {
+    if container.status {
+        "running"
+    } else {
+        "stopped"
+    }
+}
+
+fn join_search_fields(fields: &[&str]) -> String {
+    fields.join(" ")
+}
+
+fn search_field_offset(fields: &[&str], field_index: usize) -> usize {
+    fields
+        .iter()
+        .take(field_index)
+        .map(|field| field.chars().count() + 1)
+        .sum()
 }
 
 fn delete_previous_word(query: &mut String) {
@@ -697,19 +765,17 @@ fn highlighted_text(
     matched_indices: &[usize],
     offset: usize,
     selected: bool,
+    base_style: Style,
 ) -> Vec<Span<'static>> {
-    text.char_indices()
+    text.chars()
+        .enumerate()
         .map(|(index, character)| {
             let style = if matched_indices.contains(&(index + offset)) {
-                selected_style(
-                    Style::default()
-                        .fg(Color::Yellow)
-                        // .bg(Color::Blue)
-                        .add_modifier(Modifier::BOLD),
-                    selected,
-                )
+                base_style
+                    .bg(MATCH_HIGHLIGHT_BG)
+                    .add_modifier(Modifier::BOLD)
             } else {
-                row_style(Color::White, selected)
+                selected_style(base_style, selected)
             };
 
             Span::styled(character.to_string(), style)
@@ -719,10 +785,6 @@ fn highlighted_text(
 
 fn styled_gap(text: &'static str, selected: bool) -> Span<'static> {
     Span::styled(text, selected_style(Style::default(), selected))
-}
-
-fn row_style(color: Color, selected: bool) -> Style {
-    selected_style(Style::default().fg(color), selected)
 }
 
 fn selected_style(style: Style, selected: bool) -> Style {

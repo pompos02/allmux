@@ -15,7 +15,6 @@ fn main() -> anyhow::Result<()> {
     let containers = parser::parse_docker_containers()?;
     let tmux_paths_and_sessions = parser::tmux_paths_and_sessions()?;
     let active_tmux_sessions = tmux_sessions()?;
-    dbg!(&tmux_paths_and_sessions);
 
     if let Some(action) = ui::run(hosts, containers, tmux_paths_and_sessions)? {
         match action {

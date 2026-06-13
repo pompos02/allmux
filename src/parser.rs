@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+use std::collections::HashSet;
 
 #[derive(Debug, Clone)]
 pub struct SshHost {
@@ -110,9 +111,12 @@ pub fn tmux_paths_and_sessions() -> Result<Vec<TmuxSession>> {
 
     let mut tmux_sessions_and_paths: Vec<TmuxSession> = Vec::new();
     let active_sessions = tmux_sessions()?;
+    let mut path_session_names: HashSet<String> = HashSet::new();
 
     // push the dirs into the tmux array
     for (full_path, basename) in dirs_tuple {
+        path_session_names.insert(basename.clone());
+
         let mut entry = TmuxSession {
             full_path: Some(full_path),
             session_name: basename.clone(),
@@ -126,7 +130,11 @@ pub fn tmux_paths_and_sessions() -> Result<Vec<TmuxSession>> {
         tmux_sessions_and_paths.push(entry);
     }
 
-    for active_session in tmux_sessions()? {
+    for active_session in active_sessions {
+        if path_session_names.contains(&active_session) {
+            continue;
+        }
+
         tmux_sessions_and_paths.push(
             TmuxSession { full_path: None, session_name: active_session, is_active: true }
         )

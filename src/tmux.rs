@@ -20,7 +20,7 @@ pub fn launch_docker_session(container_name: &str, active_sessions: &[String]) -
     goto_session(container_name)
 }
 
-pub fn launch_tmux_session(session_name: &str,  active_sessions: &[String]) -> Result<()> {
+pub fn launch_tmux_session(session_name: &str, active_sessions: &[String]) -> Result<()> {
     if !active_sessions.contains(&session_name.to_owned()) {
         let _ = new_session(session_name)?;
     }

@@ -3,17 +3,17 @@ use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 use crossterm::execute;
 use crossterm::terminal::{
-    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
-use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
-use ratatui::Terminal;
+use fuzzy_matcher::FuzzyMatcher;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
 use ratatui::prelude::Stylize;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
+use ratatui::Terminal;
 use std::io::{self, Write};
 use std::process::{Command, Stdio};
 
@@ -545,21 +545,6 @@ fn draw(frame: &mut ratatui::Frame, app: &mut App) {
 
     let filtered = app.filtered_matches();
 
-    // Construct the entries in the list (we render them upside down)
-    let items: Vec<ListItem> = filtered
-        .iter()
-        .rev()
-        .enumerate()
-        .map(|(row, matched)| {
-            let entry = &app.entries[matched.index];
-            let selected_row = filtered
-                .len()
-                .saturating_sub(1)
-                .saturating_sub(app.selected);
-            ListItem::new(entry.list_line(&matched.indices, row == selected_row))
-        })
-        .collect();
-
     // get the current entry so we can see what type it is.
     // TODO: this could be more efficient
     let border_color = filtered
@@ -581,11 +566,27 @@ fn draw(frame: &mut ratatui::Frame, app: &mut App) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Min(0),
-            Constraint::Length(visible_list_height(left_inner, items.len())),
+            Constraint::Length(visible_list_height(left_inner, filtered.len())),
             Constraint::Length(1),
             Constraint::Length(1),
         ])
         .split(left_inner);
+
+    app.clamp_selection();
+    let list_height = left_sections[1].height as usize;
+    let selected_visual = logical_to_visual_index(filtered.len(), app.selected);
+    let visible_window = visible_visual_window(filtered.len(), selected_visual, list_height);
+
+    let items: Vec<ListItem> = visible_window
+        .clone()
+        .map(|visual_index| {
+            let logical_index = visual_to_logical_index(filtered.len(), visual_index);
+            let matched = &filtered[logical_index];
+            let entry = &app.entries[matched.index];
+
+            ListItem::new(entry.list_line(&matched.indices, visual_index == selected_visual))
+        })
+        .collect();
 
     let list = List::new(items)
         .highlight_style(Style::default())
@@ -593,16 +594,10 @@ fn draw(frame: &mut ratatui::Frame, app: &mut App) {
         .fg(border_color);
 
     let mut state = ListState::default();
-    if filtered.is_empty() {
+    if filtered.is_empty() || list_height == 0 {
         state.select(None);
     } else {
-        app.clamp_selection();
-        state.select(Some(
-            filtered
-                .len()
-                .saturating_sub(1)
-                .saturating_sub(app.selected),
-        ));
+        state.select(Some(selected_visual - visible_window.start));
     }
     frame.render_stateful_widget(list, left_sections[1], &mut state);
 
@@ -666,8 +661,41 @@ fn visible_list_height(area: Rect, item_count: usize) -> u16 {
     available_rows.min(item_count as u16)
 }
 
+fn logical_to_visual_index(len: usize, logical_index: usize) -> usize {
+    len.saturating_sub(1).saturating_sub(logical_index)
+}
+
+fn visual_to_logical_index(len: usize, visual_index: usize) -> usize {
+    len.saturating_sub(1).saturating_sub(visual_index)
+}
+
+fn visible_visual_window(
+    len: usize,
+    selected_visual: usize,
+    height: usize,
+) -> std::ops::Range<usize> {
+    if len == 0 || height == 0 {
+        return 0..0;
+    }
+
+    if len <= height {
+        return 0..len;
+    }
+
+    let bottom_start = len - height;
+    if selected_visual >= bottom_start {
+        return bottom_start..len;
+    }
+
+    selected_visual..selected_visual + height
+}
+
 fn value_or_dash(value: &str) -> &str {
-    if value.is_empty() { "-" } else { value }
+    if value.is_empty() {
+        "-"
+    } else {
+        value
+    }
 }
 
 fn ssh_search_fields(host: &SshHost) -> Vec<&str> {

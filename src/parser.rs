@@ -1,10 +1,10 @@
 use crate::tmux;
 use crate::tmux::{tmux_has_session, tmux_sessions};
 use anyhow::{Context, Result};
+use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
-use std::collections::HashSet;
 
 #[derive(Debug, Clone)]
 pub struct SshHost {
@@ -125,9 +125,11 @@ pub fn tmux_paths_and_sessions() -> Result<Vec<TmuxSession>> {
             continue;
         }
 
-        tmux_sessions_and_paths.push(
-            TmuxSession { full_path: None, session_name: active_session, is_active: true }
-        )
+        tmux_sessions_and_paths.push(TmuxSession {
+            full_path: None,
+            session_name: active_session,
+            is_active: true,
+        })
     }
 
     Ok(tmux_sessions_and_paths)

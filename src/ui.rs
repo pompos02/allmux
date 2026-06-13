@@ -3,17 +3,17 @@ use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 use crossterm::execute;
 use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
-use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
+use fuzzy_matcher::skim::SkimMatcherV2;
+use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
 use ratatui::prelude::Stylize;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
-use ratatui::Terminal;
 use std::io::{self, Write};
 use std::process::{Command, Stdio};
 
@@ -48,6 +48,22 @@ struct StatusMessage {
 }
 
 impl Entry {
+    fn is_active_tmux(&self) -> bool {
+        match self {
+            Entry::Tmux(session) => session.is_active,
+            Entry::Ssh(host) => host.is_active_tmux,
+            Entry::Docker(container) => container.is_active_tmux,
+        }
+    }
+
+    fn type_rank(&self) -> u8 {
+        match self {
+            Entry::Tmux(_) => 3,
+            Entry::Ssh(_) => 2,
+            Entry::Docker(_) => 1,
+        }
+    }
+
     fn list_line(&self, matched_indices: &[usize], selected: bool) -> Line<'static> {
         match self {
             Entry::Tmux(session) => {
@@ -367,9 +383,18 @@ impl App {
             .collect();
 
         matches.sort_by(|left, right| {
+            let left_entry = &self.entries[left.index];
+            let right_entry = &self.entries[right.index];
+
             right
                 .score
                 .cmp(&left.score)
+                .then_with(|| {
+                    right_entry
+                        .is_active_tmux()
+                        .cmp(&left_entry.is_active_tmux())
+                })
+                .then_with(|| right_entry.type_rank().cmp(&left_entry.type_rank()))
                 .then_with(|| left.index.cmp(&right.index))
         });
         matches
@@ -522,12 +547,18 @@ fn draw(frame: &mut ratatui::Frame, app: &mut App) {
 
     let filtered = app.filtered_matches();
 
+    // Construct the entries in the list (we render them upside down)
     let items: Vec<ListItem> = filtered
         .iter()
+        .rev()
         .enumerate()
         .map(|(row, matched)| {
             let entry = &app.entries[matched.index];
-            ListItem::new(entry.list_line(&matched.indices, row == app.selected))
+            let selected_row = filtered
+                .len()
+                .saturating_sub(1)
+                .saturating_sub(app.selected);
+            ListItem::new(entry.list_line(&matched.indices, row == selected_row))
         })
         .collect();
 
@@ -568,7 +599,12 @@ fn draw(frame: &mut ratatui::Frame, app: &mut App) {
         state.select(None);
     } else {
         app.clamp_selection();
-        state.select(Some(app.selected));
+        state.select(Some(
+            filtered
+                .len()
+                .saturating_sub(1)
+                .saturating_sub(app.selected),
+        ));
     }
     frame.render_stateful_widget(list, left_sections[1], &mut state);
 
@@ -633,11 +669,7 @@ fn visible_list_height(area: Rect, item_count: usize) -> u16 {
 }
 
 fn value_or_dash(value: &str) -> &str {
-    if value.is_empty() {
-        "-"
-    } else {
-        value
-    }
+    if value.is_empty() { "-" } else { value }
 }
 
 fn ssh_search_fields(host: &SshHost) -> Vec<&str> {

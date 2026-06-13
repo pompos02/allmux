@@ -36,16 +36,6 @@ pub struct TmuxSession {
     pub is_active: bool,
 }
 
-impl TmuxSession {
-    fn new(full_path: &str, session_name: &str) -> TmuxSession {
-        TmuxSession {
-            full_path: Some(full_path.to_owned()),
-            session_name: session_name.to_owned(),
-            is_active: false,
-        }
-    }
-}
-
 /// Paths that will be used to in the list with depth = 1
 static TMUX_PATHS: &[&str] = &[
     "", // home directory

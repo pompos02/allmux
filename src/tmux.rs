@@ -2,7 +2,8 @@ use anyhow::{Context, Result};
 use std::process::Command;
 
 pub fn launch_ssh_session(alias: &str, active_sessions: &[String]) -> Result<()> {
-    if active_sessions.contains(&alias.to_owned()) {
+    dbg!(&active_sessions);
+    if !active_sessions.contains(&alias.to_owned()) {
         let pane_target = new_session(alias)?;
         send_ssh_command(&pane_target, alias)?;
     }
@@ -11,7 +12,7 @@ pub fn launch_ssh_session(alias: &str, active_sessions: &[String]) -> Result<()>
 }
 
 pub fn launch_docker_session(container_name: &str, active_sessions: &[String]) -> Result<()> {
-    if active_sessions.contains(&container_name.to_owned()) {
+    if !active_sessions.contains(&container_name.to_owned()) {
         let pane_target = new_session(container_name)?;
         send_ssh_command(&pane_target, container_name)?;
     }

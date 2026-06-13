@@ -89,7 +89,6 @@ impl Entry {
                         selected,
                         Style::default().fg(Color::White),
                     ));
-                    spans.push(styled_gap(" ", selected));
                     spans.push(Span::styled(
                         "*",
                         selected_style(
@@ -107,7 +106,6 @@ impl Entry {
                         selected,
                         Style::default().fg(Color::White),
                     ));
-                    spans.push(styled_gap(" ", selected));
                 }
                 spans.push(styled_gap("  ", selected));
                 Line::from(spans)
@@ -518,10 +516,10 @@ fn handle_key(key: KeyEvent, app: &mut App) -> KeyAction {
                 }),
             };
         }
-        KeyCode::Up => app.move_up(),
-        KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::CONTROL) => app.move_up(),
-        KeyCode::Down => app.move_down(),
-        KeyCode::Char('j') if key.modifiers.contains(KeyModifiers::CONTROL) => app.move_down(),
+        KeyCode::Up => app.move_down(),
+        KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::CONTROL) => app.move_down(),
+        KeyCode::Down => app.move_up(),
+        KeyCode::Char('j') if key.modifiers.contains(KeyModifiers::CONTROL) => app.move_up(),
         KeyCode::Backspace => {
             app.query.pop();
             app.clamp_selection();

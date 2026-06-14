@@ -10,7 +10,6 @@ use fuzzy_matcher::skim::SkimMatcherV2;
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
-use ratatui::prelude::Stylize;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
@@ -61,6 +60,14 @@ impl Entry {
             Entry::Tmux(_) => 3,
             Entry::Ssh(_) => 2,
             Entry::Docker(_) => 1,
+        }
+    }
+
+    fn marker_color(&self) -> Color {
+        match self {
+            Entry::Ssh(_) => Color::Cyan,
+            Entry::Docker(_) => Color::Blue,
+            Entry::Tmux(_) => Color::Green,
         }
     }
 
@@ -238,7 +245,7 @@ impl Entry {
                     field_line(
                         "Path:",
                         session.full_path.as_deref().unwrap_or("-"),
-                        Color::DarkGray,
+                        Color::default(),
                     ),
                     Line::default(),
                     Line::from(Span::styled(
@@ -256,7 +263,7 @@ impl Entry {
                     _ => {
                         lines.push(Line::from(Span::styled(
                             "No preview available.",
-                            Style::default().fg(Color::DarkGray),
+                            Style::default().fg(Color::default()),
                         )));
                     }
                 }
@@ -304,7 +311,7 @@ impl Entry {
                 field_line("Name", &container.name, Color::Yellow),
                 field_line("ID", &container.id, Color::Cyan),
                 field_line("Image", &container.image, Color::Green),
-                field_line("Command", value_or_dash(&container.command), Color::Gray),
+                field_line("Command", value_or_dash(&container.command), Color::default()),
                 Line::default(),
                 field_line("Created", value_or_dash(&container.created_at), Color::Blue),
                 field_line("Ports", value_or_dash(&container.ports), Color::Magenta),
@@ -313,7 +320,7 @@ impl Entry {
                     Span::styled(
                         "Status",
                         Style::default()
-                            .fg(Color::DarkGray)
+                            .fg(Color::default())
                             .add_modifier(Modifier::BOLD),
                     ),
                     Span::styled("  ", Style::default()),
@@ -335,7 +342,7 @@ impl Entry {
                 field_line(
                     "Details",
                     value_or_dash(&container.status_text),
-                    Color::Gray,
+                    Color::default(),
                 ),
             ],
         }
@@ -357,6 +364,8 @@ struct Match {
 }
 
 const MATCH_HIGHLIGHT_BG: Color = Color::Rgb(94, 241, 255);
+const SELECTED_BG: Color = Color::Gray;
+const SUBTLE_BORDER: Color = Color::Rgb(52, 52, 52);
 
 impl App {
     fn new(
@@ -597,20 +606,9 @@ fn draw(frame: &mut ratatui::Frame, app: &mut App) {
 
     let filtered = app.filtered_matches();
 
-    // get the current entry so we can see what type it is.
-    // TODO: this could be more efficient
-    let pointer_color = filtered
-        .get(app.selected)
-        .map(|matched| match &app.entries[matched.index] {
-            Entry::Ssh(_) => Color::Cyan,
-            Entry::Docker(_) => Color::Blue,
-            Entry::Tmux(_) => Color::Green,
-        })
-        .unwrap_or(Color::DarkGray);
-
     let left_block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::DarkGray));
+        .border_style(Style::default().fg(SUBTLE_BORDER));
     let left_inner = left_block.inner(left_area);
     frame.render_widget(left_block, left_area);
 
@@ -636,16 +634,19 @@ fn draw(frame: &mut ratatui::Frame, app: &mut App) {
             let matched = &filtered[logical_index];
             let entry = &app.entries[matched.index];
             let selected = visual_index == selected_visual;
+            let line = selection_marker_line(
+                entry.list_line(&matched.indices, selected),
+                selected,
+                entry.marker_color(),
+            );
 
-            ListItem::new(entry.list_line(&matched.indices, selected))
-                .style(selected_style(Style::default(), selected))
+            ListItem::new(line).style(selected_style(Style::default(), selected))
         })
         .collect();
 
     let list = List::new(items)
         .highlight_style(Style::default())
-        .highlight_symbol("▌ ")
-        .fg(pointer_color);
+        .highlight_symbol("");
 
     let mut state = ListState::default();
     if filtered.is_empty() || list_height == 0 {
@@ -658,7 +659,7 @@ fn draw(frame: &mut ratatui::Frame, app: &mut App) {
     let divider = Paragraph::new("").block(
         Block::default()
             .borders(Borders::TOP)
-            .border_style(Style::default().fg(Color::DarkGray)),
+            .border_style(Style::default().fg(SUBTLE_BORDER)),
     );
     frame.render_widget(divider, left_sections[2]);
 
@@ -704,7 +705,7 @@ fn draw(frame: &mut ratatui::Frame, app: &mut App) {
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .border_style(Style::default().fg(Color::DarkGray)),
+                    .border_style(Style::default().fg(SUBTLE_BORDER)),
             )
             .wrap(Wrap { trim: false });
         frame.render_widget(preview, panes[1]);
@@ -767,7 +768,7 @@ fn tmux_file_preview_line(line: &str) -> Line<'static> {
     let name_color = if permissions.starts_with('d') {
         Color::Rgb(91, 192, 222)
     } else {
-        Color::Gray
+        Color::default()
     };
     let name_width: usize = 24;
     let name_padding = name_width.saturating_sub(name.chars().count()).max(1);
@@ -797,7 +798,7 @@ fn permission_char_color(character: char) -> Color {
         'd' | 'l' => Color::Rgb(68, 180, 220),
         'r' | 'w' => Color::Rgb(214, 169, 102),
         'x' => Color::Rgb(156, 188, 112),
-        '-' => Color::DarkGray,
+        '-' => Color::default(),
         _ => Color::Gray,
     }
 }
@@ -950,9 +951,25 @@ fn styled_gap(text: &'static str, selected: bool) -> Span<'static> {
     Span::styled(text, selected_style(Style::default(), selected))
 }
 
+fn selection_marker_line(
+    mut line: Line<'static>,
+    selected: bool,
+    marker_color: Color,
+) -> Line<'static> {
+    let marker = if selected { "▌ " } else { "  " };
+    let style = if selected {
+        Style::default().fg(marker_color).bg(SELECTED_BG)
+    } else {
+        Style::default()
+    };
+
+    line.spans.insert(0, Span::styled(marker, style));
+    line
+}
+
 fn selected_style(style: Style, selected: bool) -> Style {
     if selected {
-        style.bg(Color::Gray).add_modifier(Modifier::BOLD)
+        style.bg(SELECTED_BG).add_modifier(Modifier::BOLD)
     } else {
         style
     }

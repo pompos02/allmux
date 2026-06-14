@@ -26,7 +26,7 @@ enum Entry {
 pub enum UiAction {
     LaunchSsh(String),
     LaunchDocker(String),
-    LaunchTmux(String),
+    LaunchTmux(String, Option<String>),
 }
 
 enum KeyAction {
@@ -498,7 +498,10 @@ impl App {
         let matched = filtered.get(self.selected)?;
 
         match &self.entries[matched.index] {
-            Entry::Tmux(session) => Some(UiAction::LaunchTmux(session.session_name.clone())),
+            Entry::Tmux(session) => Some(UiAction::LaunchTmux(
+                session.session_name.clone(),
+                session.full_path.clone(),
+            )),
             Entry::Ssh(host) => Some(UiAction::LaunchSsh(host.alias.clone())),
             Entry::Docker(container) => Some(UiAction::LaunchDocker(container.name.clone())),
         }

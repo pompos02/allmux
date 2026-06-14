@@ -3,7 +3,7 @@ use anyhow::{Context, Result};
 use std::collections::HashSet;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 #[derive(Debug, Clone)]
@@ -56,12 +56,34 @@ fn basename(path: &Path) -> String {
         .to_string()
 }
 
+fn push_tmux_dir(
+    dirs: &mut Vec<(String, String)>,
+    seen_paths: &mut HashSet<PathBuf>,
+    path: &Path,
+) -> Result<()> {
+    let canonical_path = path
+        .canonicalize()
+        .with_context(|| format!("failed to resolve tmux path {}", path.display()))?;
+
+    if !seen_paths.insert(canonical_path.clone()) {
+        return Ok(());
+    }
+
+    dirs.push((
+        canonical_path.to_string_lossy().to_string(),
+        basename(&canonical_path),
+    ));
+
+    Ok(())
+}
+
 /// Returns the: paths that the `TMUX_PATHS` **Global** defines,
 /// their children, and the basedir name as tuple
 fn tmux_dirs(paths: &[&str]) -> Result<Vec<(String, String)>> {
     let home_path = dirs::home_dir().unwrap_or_default();
     let _dirs_config_path = dirs::config_dir().unwrap_or_default().push(".allmux-paths");
     let mut tmux_path_tuple: Vec<(String, String)> = Vec::new();
+    let mut seen_paths: HashSet<PathBuf> = HashSet::new();
 
     for path in paths {
         let full_path = home_path.join(path);
@@ -71,10 +93,7 @@ fn tmux_dirs(paths: &[&str]) -> Result<Vec<(String, String)>> {
             continue;
         };
 
-        tmux_path_tuple.push((
-            full_path.to_string_lossy().to_string(),
-            basename(&full_path),
-        ));
+        push_tmux_dir(&mut tmux_path_tuple, &mut seen_paths, &full_path)?;
 
         for entry in entries.flatten() {
             let child_path = entry.path();
@@ -87,10 +106,7 @@ fn tmux_dirs(paths: &[&str]) -> Result<Vec<(String, String)>> {
             }
 
             if child_path.is_dir() {
-                tmux_path_tuple.push((
-                    child_path.to_string_lossy().to_string(),
-                    basename(&child_path),
-                ));
+                push_tmux_dir(&mut tmux_path_tuple, &mut seen_paths, &child_path)?;
             }
         }
     }

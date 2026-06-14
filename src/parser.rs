@@ -1,7 +1,8 @@
-use crate::tmux::{self, tmux_has_session, tmux_sessions};
+use crate::tmux::{self, tmux_sessions};
 use anyhow::{Context, Result};
 use std::collections::HashSet;
-use std::fs::{self, File};
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::Command;
 
@@ -33,6 +34,7 @@ pub struct TmuxSession {
     pub full_path: Option<String>,
     pub session_name: String,
     pub is_active: bool,
+    pub preview: Option<String>,
 }
 
 /// Paths that will be used to in the list with depth = 1
@@ -58,7 +60,7 @@ fn basename(path: &Path) -> String {
 /// their children, and the basedir name as tuple
 fn tmux_dirs(paths: &[&str]) -> Result<Vec<(String, String)>> {
     let home_path = dirs::home_dir().unwrap_or_default();
-    let dirs_config_path = dirs::config_dir().unwrap_or_default().push(".allmux-paths");
+    let _dirs_config_path = dirs::config_dir().unwrap_or_default().push(".allmux-paths");
     let mut tmux_path_tuple: Vec<(String, String)> = Vec::new();
 
     for path in paths {
@@ -96,6 +98,73 @@ fn tmux_dirs(paths: &[&str]) -> Result<Vec<(String, String)>> {
     Ok(tmux_path_tuple)
 }
 
+fn tmux_ls_preview(path: &str) -> Option<String> {
+    let mut entries = fs::read_dir(path)
+        .ok()?
+        .flatten()
+        .filter_map(|entry| {
+            let metadata = entry.metadata().ok()?;
+            let name = entry.file_name().to_string_lossy().to_string();
+            let permissions = format_permissions(metadata.permissions().mode());
+
+            Some((name, permissions, human_size(metadata.len())))
+        })
+        .collect::<Vec<_>>();
+
+    entries.sort_by_key(|(name, _, _)| name.to_lowercase());
+
+    Some(
+        entries
+            .into_iter()
+            .map(|(name, permissions, size)| format!("{permissions} {name} {size}"))
+            .collect::<Vec<_>>()
+            .join("\n"),
+    )
+}
+
+fn format_permissions(mode: u32) -> String {
+    let file_type = match mode & 0o170000 {
+        0o040000 => 'd',
+        0o120000 => 'l',
+        _ => '-',
+    };
+
+    let mut permissions = String::with_capacity(10);
+    permissions.push(file_type);
+
+    for bit in [
+        0o400, 0o200, 0o100, 0o040, 0o020, 0o010, 0o004, 0o002, 0o001,
+    ] {
+        permissions.push(match (mode & bit != 0, bit) {
+            (true, 0o400 | 0o040 | 0o004) => 'r',
+            (true, 0o200 | 0o020 | 0o002) => 'w',
+            (true, 0o100 | 0o010 | 0o001) => 'x',
+            _ => '-',
+        });
+    }
+
+    permissions
+}
+
+fn human_size(bytes: u64) -> String {
+    const UNITS: [&str; 5] = ["B", "K", "M", "G", "T"];
+    let mut size = bytes as f64;
+    let mut unit = 0;
+
+    while size >= 1024.0 && unit < UNITS.len() - 1 {
+        size /= 1024.0;
+        unit += 1;
+    }
+
+    if unit == 0 {
+        format!("{}{}", bytes, UNITS[unit])
+    } else if size < 10.0 {
+        format!("{:.1}{}", size, UNITS[unit])
+    } else {
+        format!("{:.0}{}", size, UNITS[unit])
+    }
+}
+
 pub fn tmux_paths_and_sessions() -> Result<Vec<TmuxSession>> {
     let dirs_tuple = tmux_dirs(TMUX_PATHS)?;
 
@@ -108,9 +177,10 @@ pub fn tmux_paths_and_sessions() -> Result<Vec<TmuxSession>> {
         path_session_names.insert(basename.clone());
 
         let mut entry = TmuxSession {
-            full_path: Some(full_path),
+            full_path: Some(full_path.clone()),
             session_name: basename.clone(),
             is_active: false,
+            preview: tmux_ls_preview(&full_path),
         };
 
         if active_sessions.contains(&basename) {
@@ -129,6 +199,7 @@ pub fn tmux_paths_and_sessions() -> Result<Vec<TmuxSession>> {
             full_path: None,
             session_name: active_session,
             is_active: true,
+            preview: None,
         })
     }
 

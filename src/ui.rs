@@ -3,17 +3,17 @@ use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 use crossterm::execute;
 use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
-use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
+use fuzzy_matcher::skim::SkimMatcherV2;
+use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
 use ratatui::prelude::Stylize;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
-use ratatui::Terminal;
 use std::io::{self, Write};
 use std::process::{Command, Stdio};
 
@@ -228,8 +228,8 @@ impl Entry {
 
     fn preview(&self) -> Vec<Line<'static>> {
         match self {
-            Entry::Tmux(_) => {
-                let lines = vec![
+            Entry::Tmux(session) => {
+                let mut lines = vec![
                     Line::from(Span::styled(
                         "Tmux Session",
                         Style::default()
@@ -237,19 +237,32 @@ impl Entry {
                             .add_modifier(Modifier::BOLD),
                     )),
                     Line::default(),
+                    field_line("Name:", &session.session_name, Color::Green),
                     field_line(
-                        "TODO:",
-                        "we should show something like ls -la",
-                        Color::default(),
+                        "Path:",
+                        session.full_path.as_deref().unwrap_or("-"),
+                        Color::DarkGray,
                     ),
                     Line::default(),
                     Line::from(Span::styled(
-                        "Description:",
+                        "Files",
                         Style::default()
                             .fg(Color::Magenta)
                             .add_modifier(Modifier::BOLD),
                     )),
                 ];
+
+                match &session.preview {
+                    Some(preview) if !preview.trim().is_empty() => {
+                        lines.extend(preview.lines().take(30).map(tmux_file_preview_line));
+                    }
+                    _ => {
+                        lines.push(Line::from(Span::styled(
+                            "No preview available.",
+                            Style::default().fg(Color::DarkGray),
+                        )));
+                    }
+                }
 
                 lines
             }
@@ -720,10 +733,58 @@ fn visible_visual_window(
 }
 
 fn value_or_dash(value: &str) -> &str {
-    if value.is_empty() {
-        "-"
+    if value.is_empty() { "-" } else { value }
+}
+
+fn tmux_file_preview_line(line: &str) -> Line<'static> {
+    let Some((permissions, rest)) = line.split_once(' ') else {
+        return Line::from(Span::styled(
+            line.to_string(),
+            Style::default().fg(Color::Gray),
+        ));
+    };
+    let Some((name, size)) = rest.rsplit_once(' ') else {
+        return Line::from(Span::styled(
+            line.to_string(),
+            Style::default().fg(Color::Gray),
+        ));
+    };
+
+    let name_color = if permissions.starts_with('d') {
+        Color::Rgb(91, 192, 222)
     } else {
-        value
+        Color::Gray
+    };
+    let name_width: usize = 24;
+    let name_padding = name_width.saturating_sub(name.chars().count()).max(1);
+
+    let mut spans = vec![
+        Span::styled(name.to_string(), Style::default().fg(name_color)),
+        Span::raw(" ".repeat(name_padding)),
+    ];
+
+    spans.extend(permissions.chars().map(|character| {
+        Span::styled(
+            character.to_string(),
+            Style::default().fg(permission_char_color(character)),
+        )
+    }));
+
+    spans.extend([
+        Span::raw("  "),
+        Span::styled(size.to_string(), Style::default().fg(Color::LightMagenta)),
+    ]);
+
+    Line::from(spans)
+}
+
+fn permission_char_color(character: char) -> Color {
+    match character {
+        'd' | 'l' => Color::Rgb(68, 180, 220),
+        'r' | 'w' => Color::Rgb(214, 169, 102),
+        'x' => Color::Rgb(156, 188, 112),
+        '-' => Color::DarkGray,
+        _ => Color::Gray,
     }
 }
 

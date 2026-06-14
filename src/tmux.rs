@@ -14,7 +14,7 @@ pub fn launch_ssh_session(alias: &str, active_sessions: &[String]) -> Result<()>
 pub fn launch_docker_session(container_name: &str, active_sessions: &[String]) -> Result<()> {
     if !active_sessions.contains(&container_name.to_owned()) {
         let pane_target = new_session(container_name)?;
-        send_ssh_command(&pane_target, container_name)?;
+        send_docker_command(&pane_target, container_name)?;
     }
 
     goto_session(container_name)

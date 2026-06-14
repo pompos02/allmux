@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use std::path::Path;
 use std::process::Command;
 
 pub fn launch_ssh_session(alias: &str, active_sessions: &[String]) -> Result<()> {
@@ -19,9 +20,13 @@ pub fn launch_docker_session(container_name: &str, active_sessions: &[String]) -
     goto_session(container_name)
 }
 
-pub fn launch_tmux_session(session_name: &str, active_sessions: &[String]) -> Result<()> {
+pub fn launch_tmux_session(
+    session_name: &str,
+    full_path: Option<&str>,
+    active_sessions: &[String],
+) -> Result<()> {
     if !active_sessions.contains(&session_name.to_owned()) {
-        let _ = new_session(session_name)?;
+        let _ = new_session_at(session_name, full_path)?;
     }
 
     goto_session(session_name)
@@ -67,7 +72,7 @@ fn send_docker_command(pane_target: &str, container_name: &str) -> Result<()> {
     let cmd = format!("docker exec -it {} bash", container_name);
 
     let status = Command::new("tmux")
-        .args(["send-keys", "-t", &pane_target, &cmd, "C-m"])
+        .args(["send-keys", "-t", pane_target, &cmd, "C-m"])
         .status()
         .context("failed to send docker command to pane")?;
 
@@ -95,7 +100,13 @@ fn send_ssh_command(pane_target: &str, alias: &str) -> Result<()> {
 
 /// Creates a new tmux session with the `name`
 fn new_session(name: &str) -> Result<String> {
+    new_session_at(name, None)
+}
+
+/// Creates a new tmux session with the `name` in `path`, or $HOME if no path is provided.
+fn new_session_at(name: &str, path: Option<&str>) -> Result<String> {
     let home = dirs::home_dir().context("failed to find $HOME")?;
+    let start_path = path.map(Path::new).unwrap_or(home.as_path());
 
     let output = Command::new("tmux")
         .args([
@@ -108,7 +119,7 @@ fn new_session(name: &str) -> Result<String> {
             name,
             "-c",
         ])
-        .arg(home)
+        .arg(start_path)
         .output()
         .context("failed to create tmux session")?;
 

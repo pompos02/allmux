@@ -1,0 +1,5 @@
+i want you to help me implement the following:
+
+
+when i press enter on a tmux session entry, and the session is not active, i should create the new session and the session should automatically be startede to that path, how can i implmeent this?
+

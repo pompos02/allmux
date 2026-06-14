@@ -23,9 +23,11 @@ fn main() -> anyhow::Result<()> {
             ui::UiAction::LaunchDocker(container_name) => {
                 tmux::launch_docker_session(&container_name, &active_tmux_sessions)?;
             }
-            ui::UiAction::LaunchTmux(session_name) => {
-                tmux::launch_tmux_session(&session_name, &active_tmux_sessions)?
-            }
+            ui::UiAction::LaunchTmux(session_name, full_path) => tmux::launch_tmux_session(
+                &session_name,
+                full_path.as_deref(),
+                &active_tmux_sessions,
+            )?,
         }
     }
     Ok(())

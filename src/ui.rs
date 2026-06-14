@@ -350,6 +350,7 @@ struct App {
     query: String,
     selected: usize,
     status_message: Option<StatusMessage>,
+    preview_expanded: bool,
 }
 
 struct Match {
@@ -376,6 +377,7 @@ impl App {
             query: String::new(),
             selected: 0,
             status_message: None,
+            preview_expanded: false,
         }
     }
 
@@ -477,6 +479,11 @@ impl App {
             Entry::Tmux(_) => None,
         }
     }
+
+    fn toggle_preview(&mut self) {
+        self.preview_expanded = !self.preview_expanded;
+        self.status_message = None;
+    }
 }
 
 pub fn run(
@@ -556,6 +563,9 @@ fn handle_key(key: KeyEvent, app: &mut App) -> KeyAction {
                 }),
             };
         }
+        KeyCode::Char('s' | 'S') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.toggle_preview();
+        }
         KeyCode::Up => app.move_down(),
         KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::CONTROL) => app.move_down(),
         KeyCode::PageUp => app.move_down_by(5),
@@ -580,10 +590,13 @@ fn handle_key(key: KeyEvent, app: &mut App) -> KeyAction {
 
 fn draw(frame: &mut ratatui::Frame, app: &mut App) {
     let area = frame.area();
-    let panes = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
-        .split(area);
+    let panes = app.preview_expanded.then(|| {
+        Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+            .split(area)
+    });
+    let left_area = panes.as_ref().map_or(area, |panes| panes[0]);
 
     let filtered = app.filtered_matches();
 
@@ -601,8 +614,8 @@ fn draw(frame: &mut ratatui::Frame, app: &mut App) {
     let left_block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(border_color));
-    let left_inner = left_block.inner(panes[0]);
-    frame.render_widget(left_block, panes[0]);
+    let left_inner = left_block.inner(left_area);
+    frame.render_widget(left_block, left_area);
 
     let left_sections = Layout::default()
         .direction(Direction::Vertical)
@@ -677,24 +690,26 @@ fn draw(frame: &mut ratatui::Frame, app: &mut App) {
         ));
     }
 
-    let preview = filtered
-        .get(app.selected)
-        .map(|matched| app.entries[matched.index].preview())
-        .unwrap_or_else(|| {
-            vec![Line::from(Span::styled(
-                "No entries match the current search.",
-                Style::default().fg(Color::DarkGray),
-            ))]
-        });
+    if let Some(panes) = panes {
+        let preview = filtered
+            .get(app.selected)
+            .map(|matched| app.entries[matched.index].preview())
+            .unwrap_or_else(|| {
+                vec![Line::from(Span::styled(
+                    "No entries match the current search.",
+                    Style::default().fg(Color::DarkGray),
+                ))]
+            });
 
-    let preview = Paragraph::new(preview)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::DarkGray)),
-        )
-        .wrap(Wrap { trim: false });
-    frame.render_widget(preview, panes[1]);
+        let preview = Paragraph::new(preview)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::DarkGray)),
+            )
+            .wrap(Wrap { trim: false });
+        frame.render_widget(preview, panes[1]);
+    }
 }
 
 fn visible_list_height(area: Rect, item_count: usize) -> u16 {

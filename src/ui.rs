@@ -84,7 +84,7 @@ impl Entry {
                             .fg(Color::Green)
                             .add_modifier(Modifier::BOLD),
                     ),
-                    styled_gap("  ", selected),
+                    styled_gap(" ", selected),
                 ];
 
                 if session.is_active {
@@ -126,7 +126,7 @@ impl Entry {
                             .fg(Color::Cyan)
                             .add_modifier(Modifier::BOLD),
                     ),
-                    styled_gap("  ", selected),
+                    styled_gap(" ", selected),
                 ];
                 spans.extend(highlighted_text(
                     &host.alias,
@@ -171,7 +171,7 @@ impl Entry {
                             .fg(Color::Blue)
                             .add_modifier(Modifier::BOLD),
                     ),
-                    styled_gap("  ", selected),
+                    styled_gap(" ", selected),
                 ];
                 spans.extend(highlighted_text(
                     &container.name,

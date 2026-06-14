@@ -72,10 +72,9 @@ impl Entry {
                 let display_offset = search_field_offset(&search_fields, 0);
                 let mut spans = vec![
                     Span::styled(
-                        " MUX ",
+                        "",
                         Style::default()
-                            .fg(Color::Black)
-                            .bg(Color::Green)
+                            .fg(Color::Green)
                             .add_modifier(Modifier::BOLD),
                     ),
                     styled_gap("  ", selected),
@@ -115,10 +114,9 @@ impl Entry {
                 let search_fields = ssh_search_fields(host);
                 let mut spans = vec![
                     Span::styled(
-                        " SSH ",
+                        "",
                         Style::default()
-                            .fg(Color::Black)
-                            .bg(Color::Cyan)
+                            .fg(Color::Cyan)
                             .add_modifier(Modifier::BOLD),
                     ),
                     styled_gap("  ", selected),
@@ -161,10 +159,9 @@ impl Entry {
 
                 let mut spans = vec![
                     Span::styled(
-                        " DOC ",
+                        "",
                         Style::default()
-                            .fg(Color::Black)
-                            .bg(Color::Blue)
+                            .fg(Color::Blue)
                             .add_modifier(Modifier::BOLD),
                     ),
                     styled_gap("  ", selected),
@@ -602,7 +599,7 @@ fn draw(frame: &mut ratatui::Frame, app: &mut App) {
 
     // get the current entry so we can see what type it is.
     // TODO: this could be more efficient
-    let border_color = filtered
+    let pointer_color = filtered
         .get(app.selected)
         .map(|matched| match &app.entries[matched.index] {
             Entry::Ssh(_) => Color::Cyan,
@@ -613,7 +610,7 @@ fn draw(frame: &mut ratatui::Frame, app: &mut App) {
 
     let left_block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(border_color));
+        .border_style(Style::default().fg(Color::DarkGray));
     let left_inner = left_block.inner(left_area);
     frame.render_widget(left_block, left_area);
 
@@ -638,15 +635,17 @@ fn draw(frame: &mut ratatui::Frame, app: &mut App) {
             let logical_index = visual_to_logical_index(filtered.len(), visual_index);
             let matched = &filtered[logical_index];
             let entry = &app.entries[matched.index];
+            let selected = visual_index == selected_visual;
 
-            ListItem::new(entry.list_line(&matched.indices, visual_index == selected_visual))
+            ListItem::new(entry.list_line(&matched.indices, selected))
+                .style(selected_style(Style::default(), selected))
         })
         .collect();
 
     let list = List::new(items)
         .highlight_style(Style::default())
         .highlight_symbol("▌ ")
-        .fg(border_color);
+        .fg(pointer_color);
 
     let mut state = ListState::default();
     if filtered.is_empty() || list_height == 0 {
@@ -675,7 +674,7 @@ fn draw(frame: &mut ratatui::Frame, app: &mut App) {
             Style::default().fg(color).add_modifier(Modifier::BOLD),
         )
     } else {
-        (format!("> {}", app.query), Style::default().fg(Color::Blue))
+        (format!("> {}", app.query), Style::default())
     };
 
     let prompt = Paragraph::new(prompt_text).style(prompt_style);

@@ -226,6 +226,31 @@ impl Entry {
         }
     }
 
+    fn display_search_fields(&self) -> Vec<&str> {
+        match self {
+            Entry::Ssh(host) => {
+                let fields = ssh_search_fields(host);
+                vec![fields[0], fields[1]]
+            }
+            Entry::Docker(container) => {
+                let fields = docker_search_fields(container);
+                vec![fields[0], fields[1]]
+            }
+            Entry::Tmux(session) => {
+                let fields = tmux_search_fields(session);
+                vec![fields[0]]
+            }
+        }
+    }
+
+    fn display_match_indices(&self, matcher: &SkimMatcherV2, query: &str) -> Option<Vec<usize>> {
+        let fields = self.display_search_fields();
+        let text = join_search_fields(&fields);
+        matcher
+            .fuzzy_indices(&text, query)
+            .map(|(_, indices)| indices)
+    }
+
     fn search_text(&self) -> String {
         join_search_fields(&self.search_fields())
     }
@@ -311,7 +336,11 @@ impl Entry {
                 field_line("Name", &container.name, Color::Yellow),
                 field_line("ID", &container.id, Color::Cyan),
                 field_line("Image", &container.image, Color::Green),
-                field_line("Command", value_or_dash(&container.command), Color::default()),
+                field_line(
+                    "Command",
+                    value_or_dash(&container.command),
+                    Color::default(),
+                ),
                 Line::default(),
                 field_line("Created", value_or_dash(&container.created_at), Color::Blue),
                 field_line("Ports", value_or_dash(&container.ports), Color::Magenta),
@@ -408,7 +437,9 @@ impl App {
                     .map(|(score, indices)| Match {
                         index,
                         score,
-                        indices,
+                        indices: entry
+                            .display_match_indices(&matcher, &self.query)
+                            .unwrap_or(indices),
                     })
             })
             .collect();

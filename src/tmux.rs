@@ -2,7 +2,6 @@ use anyhow::{Context, Result};
 use std::process::Command;
 
 pub fn launch_ssh_session(alias: &str, active_sessions: &[String]) -> Result<()> {
-    dbg!(&active_sessions);
     if !active_sessions.contains(&alias.to_owned()) {
         let pane_target = new_session(alias)?;
         send_ssh_command(&pane_target, alias)?;

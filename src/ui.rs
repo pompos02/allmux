@@ -131,7 +131,6 @@ impl Entry {
                     Style::default().fg(Color::White),
                 ));
                 if host.is_active_tmux {
-                    spans.push(styled_gap(" ", selected));
                     spans.push(Span::styled(
                         "*",
                         selected_style(
@@ -178,7 +177,6 @@ impl Entry {
                     Style::default().fg(Color::White),
                 ));
                 if container.is_active_tmux {
-                    spans.push(styled_gap(" ", selected));
                     spans.push(Span::styled(
                         "*",
                         selected_style(
@@ -204,9 +202,23 @@ impl Entry {
 
     fn search_fields(&self) -> Vec<&str> {
         match self {
-            Entry::Ssh(host) => ssh_search_fields(host),
-            Entry::Docker(container) => docker_search_fields(container),
-            Entry::Tmux(session) => tmux_search_fields(session),
+            Entry::Ssh(host) => {
+                let mut fields = ssh_search_fields(host);
+                fields.push("ssh");
+                fields
+            }
+            Entry::Docker(container) => {
+                let mut fields = docker_search_fields(container);
+                fields.push("docker");
+                fields.push("doc");
+                fields
+            }
+            Entry::Tmux(session) => {
+                let mut fields = tmux_search_fields(session);
+                fields.push("tmux");
+                fields.push("mux");
+                fields
+            }
         }
     }
 
@@ -411,10 +423,21 @@ impl App {
         self.selected = self.selected.saturating_sub(1);
     }
 
+    fn move_up_by(&mut self, count: usize) {
+        self.selected = self.selected.saturating_sub(count);
+    }
+
     fn move_down(&mut self) {
         let len = self.filtered_matches().len();
         if self.selected + 1 < len {
             self.selected += 1;
+        }
+    }
+
+    fn move_down_by(&mut self, count: usize) {
+        let len = self.filtered_matches().len();
+        if len > 0 {
+            self.selected = (self.selected + count).min(len - 1);
         }
     }
 
@@ -494,6 +517,10 @@ fn handle_key(key: KeyEvent, app: &mut App) -> KeyAction {
                 return KeyAction::Select(action);
             }
         }
+        KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.query.clear();
+            app.clamp_selection();
+        }
         KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             delete_previous_word(&mut app.query);
             app.clamp_selection();
@@ -518,8 +545,10 @@ fn handle_key(key: KeyEvent, app: &mut App) -> KeyAction {
         }
         KeyCode::Up => app.move_down(),
         KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::CONTROL) => app.move_down(),
+        KeyCode::PageUp => app.move_down_by(5),
         KeyCode::Down => app.move_up(),
         KeyCode::Char('j') if key.modifiers.contains(KeyModifiers::CONTROL) => app.move_up(),
+        KeyCode::PageDown => app.move_up_by(5),
         KeyCode::Backspace => {
             app.query.pop();
             app.clamp_selection();
@@ -830,6 +859,7 @@ fn highlighted_text(
         .map(|(index, character)| {
             let style = if matched_indices.contains(&(index + offset)) {
                 base_style
+                    .fg(Color::Black)
                     .bg(MATCH_HIGHLIGHT_BG)
                     .add_modifier(Modifier::BOLD)
             } else {

@@ -1,8 +1,7 @@
-use crate::tmux;
-use crate::tmux::{tmux_has_session, tmux_sessions};
+use crate::tmux::{self, tmux_has_session, tmux_sessions};
 use anyhow::{Context, Result};
 use std::collections::HashSet;
-use std::fs;
+use std::fs::{self, File};
 use std::path::Path;
 use std::process::Command;
 
@@ -57,8 +56,9 @@ fn basename(path: &Path) -> String {
 
 /// Returns the: paths that the `TMUX_PATHS` **Global** defines,
 /// their children, and the basedir name as tuple
-fn tmux_dirs(paths: &[&str]) -> Vec<(String, String)> {
+fn tmux_dirs(paths: &[&str]) -> Result<Vec<(String, String)>> {
     let home_path = dirs::home_dir().unwrap_or_default();
+    let dirs_config_path = dirs::config_dir().unwrap_or_default().push(".allmux-paths");
     let mut tmux_path_tuple: Vec<(String, String)> = Vec::new();
 
     for path in paths {
@@ -93,11 +93,11 @@ fn tmux_dirs(paths: &[&str]) -> Vec<(String, String)> {
         }
     }
 
-    tmux_path_tuple
+    Ok(tmux_path_tuple)
 }
 
 pub fn tmux_paths_and_sessions() -> Result<Vec<TmuxSession>> {
-    let dirs_tuple = tmux_dirs(TMUX_PATHS);
+    let dirs_tuple = tmux_dirs(TMUX_PATHS)?;
 
     let mut tmux_sessions_and_paths: Vec<TmuxSession> = Vec::new();
     let active_sessions = tmux_sessions()?;

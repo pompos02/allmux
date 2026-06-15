@@ -37,17 +37,6 @@ pub struct TmuxSession {
     pub preview: Option<String>,
 }
 
-/// Paths that will be used to in the list with depth = 1
-static TMUX_PATHS: &[&str] = &[
-    "", // home directory
-    "projects",
-    "projects/personal",
-    "projects/opensource",
-    "training",
-    "repos",
-    "projects/misc",
-];
-
 // Get the filename of the fullpath
 fn basename(path: &Path) -> String {
     path.file_name()
@@ -79,13 +68,20 @@ fn push_tmux_dir(
 
 /// Returns the: paths that the `TMUX_PATHS` **Global** defines,
 /// their children, and the basedir name as tuple
-fn tmux_dirs(paths: &[&str]) -> Result<Vec<(String, String)>> {
+fn tmux_dirs() -> Result<Vec<(String, String)>> {
     let home_path = dirs::home_dir().unwrap_or_default();
-    let _dirs_config_path = dirs::config_dir().unwrap_or_default().push(".allmux-paths");
+
+    let config_file_path = dirs::config_dir()
+        .context("cannot find $HOME")?
+        .join(".allmux");
+
+    let content = fs::read_to_string(&config_file_path).with_context(|| format!("Could not read the file at {:?}", config_file_path))?;
+    dbg!(&content);
+
     let mut tmux_path_tuple: Vec<(String, String)> = Vec::new();
     let mut seen_paths: HashSet<PathBuf> = HashSet::new();
 
-    for path in paths {
+    for path in content.lines() {
         let full_path = home_path.join(path);
 
         // Just skip if the path is not valid
@@ -182,7 +178,7 @@ fn human_size(bytes: u64) -> String {
 }
 
 pub fn tmux_paths_and_sessions() -> Result<Vec<TmuxSession>> {
-    let dirs_tuple = tmux_dirs(TMUX_PATHS)?;
+    let dirs_tuple = tmux_dirs()?;
 
     let mut tmux_sessions_and_paths: Vec<TmuxSession> = Vec::new();
     let active_sessions = tmux_sessions()?;

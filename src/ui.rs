@@ -512,11 +512,8 @@ impl App {
         let matched = filtered.get(self.selected)?;
 
         match &self.entries[matched.index] {
-            // TODO: figure out what is happening in here
             Entry::Ssh(host) if !host.hostname.is_empty() => Some(host.hostname.clone()),
-            Entry::Ssh(_) => None,
-            Entry::Docker(_) => None,
-            Entry::Tmux(_) => None,
+            _ => None,
         }
     }
 

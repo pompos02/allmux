@@ -132,13 +132,3 @@ fn new_session_at(name: &str, path: Option<&str>) -> Result<String> {
 
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
-
-// pub fn tmux_has_session(session_name: &str) -> Result<bool> {
-//     let status = Command::new("tmux")
-//         .args(["has-session", "-t", session_name])
-//         .status()
-//         .context("failed to check tmux session")?;
-//
-//     println!("Here we are man dont be shy {}", status.success());
-//     Ok(status.success())
-// }

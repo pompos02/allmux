@@ -76,7 +76,6 @@ fn tmux_dirs() -> Result<Vec<(String, String)>> {
         .join(".allmux");
 
     let content = fs::read_to_string(&config_file_path).with_context(|| format!("Could not read the file at {:?}", config_file_path))?;
-    dbg!(&content);
 
     let mut tmux_path_tuple: Vec<(String, String)> = Vec::new();
     let mut seen_paths: HashSet<PathBuf> = HashSet::new();

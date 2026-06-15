@@ -1,18 +1,19 @@
+use crate::history::History;
 use crate::parser::{DockerContainer, SshHost, TmuxSession};
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 use crossterm::execute;
 use crossterm::terminal::{
-    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
-use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
-use ratatui::Terminal;
+use fuzzy_matcher::FuzzyMatcher;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
+use ratatui::Terminal;
 use std::io::{self, Write};
 use std::process::{Command, Stdio};
 
@@ -255,6 +256,17 @@ impl Entry {
         join_search_fields(&self.search_fields())
     }
 
+    fn history_key(&self) -> String {
+        match self {
+            Entry::Ssh(host) => format!("ssh:{}", host.alias),
+            Entry::Docker(container) => format!("docker:{}", container.name),
+            Entry::Tmux(session) => match &session.full_path {
+                Some(path) => format!("tmux:{path}"),
+                None => format!("tmux-session:{}", session.session_name),
+            },
+        }
+    }
+
     fn preview(&self) -> Vec<Line<'static>> {
         match self {
             Entry::Tmux(session) => {
@@ -384,6 +396,7 @@ struct App {
     selected: usize,
     status_message: Option<StatusMessage>,
     preview_expanded: bool,
+    history: History,
 }
 
 struct Match {
@@ -413,6 +426,7 @@ impl App {
             selected: 0,
             status_message: None,
             preview_expanded: false,
+            history: History::load(),
         }
     }
 
@@ -427,7 +441,7 @@ impl App {
                 if self.query.is_empty() {
                     return Some(Match {
                         index,
-                        score: 0,
+                        score: self.history.score(&entry.history_key()),
                         indices: Vec::new(),
                     });
                 }
@@ -436,7 +450,8 @@ impl App {
                     .fuzzy_indices(&entry.search_text(), &self.query)
                     .map(|(score, indices)| Match {
                         index,
-                        score,
+                        score: score
+                            + score.saturating_mul(self.history.score(&entry.history_key())) / 100,
                         indices: entry
                             .display_match_indices(&matcher, &self.query)
                             .unwrap_or(indices),
@@ -493,11 +508,15 @@ impl App {
         }
     }
 
-    fn selected_action(&self) -> Option<UiAction> {
+    fn selected_action(&mut self) -> Option<UiAction> {
         let filtered = self.filtered_matches();
         let matched = filtered.get(self.selected)?;
+        let entry = &self.entries[matched.index];
+        let history_key = entry.history_key();
 
-        match &self.entries[matched.index] {
+        let _ = self.history.record_access(&history_key);
+
+        match entry {
             Entry::Tmux(session) => Some(UiAction::LaunchTmux(
                 session.session_name.clone(),
                 session.full_path.clone(),
@@ -724,7 +743,10 @@ fn draw(frame: &mut ratatui::Frame, app: &mut App) {
     if let Some(panes) = panes {
         let preview = filtered
             .get(app.selected)
-            .map(|matched| app.entries[matched.index].preview())
+            .map(|matched| {
+                let entry = &app.entries[matched.index];
+                preview_with_score(entry, matched.score)
+            })
             .unwrap_or_else(|| {
                 vec![Line::from(Span::styled(
                     "No entries match the current search.",
@@ -779,7 +801,29 @@ fn visible_visual_window(
 }
 
 fn value_or_dash(value: &str) -> &str {
-    if value.is_empty() { "-" } else { value }
+    if value.is_empty() {
+        "-"
+    } else {
+        value
+    }
+}
+
+fn preview_with_score(entry: &Entry, score: i64) -> Vec<Line<'static>> {
+    let mut lines = vec![
+        Line::from(vec![
+            Span::styled(
+                "Score: ",
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(score.to_string(), Style::default().fg(Color::Yellow)),
+        ]),
+        Line::default(),
+    ];
+
+    lines.extend(entry.preview());
+    lines
 }
 
 fn tmux_file_preview_line(line: &str) -> Line<'static> {

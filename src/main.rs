@@ -1,3 +1,4 @@
+mod history;
 mod parser;
 mod tmux;
 mod ui;

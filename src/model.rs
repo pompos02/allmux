@@ -35,9 +35,3 @@ pub enum Entry {
     Docker(DockerContainer),
     Tmux(TmuxSession),
 }
-
-pub enum ListEntry {
-    SshHost,
-    DockerContainer,
-    TmuxSession,
-}

@@ -1,41 +1,10 @@
-use crate::tmux::{self, tmux_sessions};
+use crate::model::{DockerContainer, Entry, SshHost, TmuxSession};
 use anyhow::{Context, Result};
 use std::collections::HashSet;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-
-#[derive(Debug, Clone)]
-pub struct SshHost {
-    pub alias: String,
-    pub hostname: String,
-    pub user: String,
-    pub description: Option<String>,
-    pub is_active_tmux: bool,
-}
-
-#[derive(Debug, Clone)]
-pub struct DockerContainer {
-    pub id: String,
-    pub name: String,
-    pub image: String,
-    pub command: String,
-    pub created_at: String,
-    pub status_text: String,
-    pub ports: String,
-    pub status: bool,
-    pub is_active_tmux: bool,
-}
-
-// Holds the active sessions and paths defined that are no sessions yet
-#[derive(Debug, Clone)]
-pub struct TmuxSession {
-    pub full_path: Option<String>,
-    pub session_name: String,
-    pub is_active: bool,
-    pub preview: Option<String>,
-}
 
 // Get the filename of the fullpath
 fn basename(path: &Path) -> String {
@@ -75,7 +44,8 @@ fn tmux_dirs() -> Result<Vec<(String, String)>> {
         .context("cannot find $HOME")?
         .join(".allmux");
 
-    let content = fs::read_to_string(&config_file_path).with_context(|| format!("Could not read the file at {:?}", config_file_path))?;
+    let content = fs::read_to_string(&config_file_path)
+        .with_context(|| format!("Could not read the file at {:?}", config_file_path))?;
 
     let mut tmux_path_tuple: Vec<(String, String)> = Vec::new();
     let mut seen_paths: HashSet<PathBuf> = HashSet::new();
@@ -176,42 +146,37 @@ fn human_size(bytes: u64) -> String {
     }
 }
 
-pub fn tmux_paths_and_sessions() -> Result<Vec<TmuxSession>> {
+pub fn tmux_paths_and_sessions(active_sessions: &[String]) -> Result<Vec<TmuxSession>> {
     let dirs_tuple = tmux_dirs()?;
 
     let mut tmux_sessions_and_paths: Vec<TmuxSession> = Vec::new();
-    let active_sessions = tmux_sessions()?;
-    let mut path_session_names: HashSet<String> = HashSet::new();
+    let mut path_session_names = HashSet::new();
 
     // push the dirs into the tmux array
     for (full_path, basename) in dirs_tuple {
         path_session_names.insert(basename.clone());
 
-        let mut entry = TmuxSession {
+        let entry = TmuxSession {
             full_path: Some(full_path.clone()),
             session_name: basename.clone(),
-            is_active: false,
+            is_active: active_sessions.contains(&basename),
             preview: tmux_ls_preview(&full_path),
         };
-
-        if active_sessions.contains(&basename) {
-            entry.is_active = true
-        }
 
         tmux_sessions_and_paths.push(entry);
     }
 
     for active_session in active_sessions {
-        if path_session_names.contains(&active_session) {
+        if path_session_names.contains(active_session) {
             continue;
         }
 
         tmux_sessions_and_paths.push(TmuxSession {
             full_path: None,
-            session_name: active_session,
+            session_name: active_session.clone(),
             is_active: true,
             preview: None,
-        })
+        });
     }
 
     Ok(tmux_sessions_and_paths)
@@ -274,13 +239,6 @@ pub fn parse_ssh_config(path: &Path) -> Result<Vec<SshHost>> {
                 }
             }
             _ => {}
-        }
-    }
-
-    let tmux_sessions = tmux::tmux_sessions()?;
-    for host in &mut hosts {
-        if tmux_sessions.contains(&host.alias) {
-            host.is_active_tmux = true;
         }
     }
 
@@ -361,12 +319,50 @@ pub fn parse_docker_containers() -> Result<Vec<DockerContainer>> {
         });
     }
 
-    let tmux_sessions = tmux::tmux_sessions()?;
-    for container in &mut containers {
-        if tmux_sessions.contains(&container.name) {
-            container.is_active_tmux = true;
-        }
+    Ok(containers)
+}
+
+pub fn build_entries(
+    active_sessions: &[String],
+) -> Result<Vec<Entry>> {
+    let ssh_config_path = dirs::home_dir()
+        .map(|home| home.join(".ssh/config"))
+        .unwrap_or_else(|| Path::new(".ssh/config").to_path_buf());
+
+    let mut hosts = parse_ssh_config(&ssh_config_path)?;
+    let mut containers = parse_docker_containers()?;
+    let tmux_entries = tmux_paths_and_sessions(active_sessions)?;
+
+    let active_sessions = active_sessions
+        .iter()
+        .map(String::as_str)
+        .collect::<HashSet<_>>();
+
+    let mut seen = HashSet::new();
+    let mut entries = Vec::with_capacity(hosts.len() + containers.len() + tmux_entries.len());
+
+    for host in &mut hosts {
+        host.is_active_tmux = active_sessions.contains(host.alias.as_str());
+        seen.insert(host.alias.clone());
     }
 
-    Ok(containers)
+    for container in &mut containers {
+        container.is_active_tmux = active_sessions.contains(container.name.as_str());
+        seen.insert(container.name.clone());
+    }
+
+    entries.extend(hosts.into_iter().map(Entry::Ssh));
+    entries.extend(containers.into_iter().map(Entry::Docker));
+
+    entries.extend(tmux_entries.into_iter().filter_map(|mut entry| {
+        entry.is_active = active_sessions.contains(entry.session_name.as_str());
+
+        if seen.contains(&entry.session_name) {
+            return None;
+        }
+
+        Some(Entry::Tmux(entry))
+    }));
+
+    Ok(entries)
 }

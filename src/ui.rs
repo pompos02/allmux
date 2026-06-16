@@ -1,28 +1,21 @@
 use crate::history::History;
-use crate::parser::{DockerContainer, SshHost, TmuxSession};
+use crate::model::{DockerContainer, Entry, SshHost, TmuxSession};
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 use crossterm::execute;
 use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
-use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
+use fuzzy_matcher::skim::SkimMatcherV2;
+use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
-use ratatui::Terminal;
 use std::io::{self, Write};
 use std::process::{Command, Stdio};
-
-#[derive(Debug, Clone)]
-enum Entry {
-    Ssh(SshHost),
-    Docker(DockerContainer),
-    Tmux(TmuxSession),
-}
 
 pub enum UiAction {
     LaunchSsh(String),
@@ -410,16 +403,7 @@ const SELECTED_BG: Color = Color::Gray;
 const SUBTLE_BORDER: Color = Color::Rgb(52, 52, 52);
 
 impl App {
-    fn new(
-        hosts: Vec<SshHost>,
-        containers: Vec<DockerContainer>,
-        tmux_sessions: Vec<TmuxSession>,
-    ) -> Self {
-        let mut entries = Vec::with_capacity(hosts.len() + containers.len() + tmux_sessions.len());
-        entries.extend(hosts.into_iter().map(Entry::Ssh));
-        entries.extend(containers.into_iter().map(Entry::Docker));
-        entries.extend(tmux_sessions.into_iter().map(Entry::Tmux));
-
+    fn new(entries: Vec<Entry>) -> Self {
         Self {
             entries,
             query: String::new(),
@@ -542,11 +526,7 @@ impl App {
     }
 }
 
-pub fn run(
-    hosts: Vec<SshHost>,
-    containers: Vec<DockerContainer>,
-    tmux_sessions: Vec<TmuxSession>,
-) -> Result<Option<UiAction>> {
+pub fn run(entries: Vec<Entry>) -> Result<Option<UiAction>> {
     enable_raw_mode()?;
 
     let mut stdout = io::stdout();
@@ -555,7 +535,7 @@ pub fn run(
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let result = run_app(&mut terminal, App::new(hosts, containers, tmux_sessions));
+    let result = run_app(&mut terminal, App::new(entries));
 
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
@@ -801,11 +781,7 @@ fn visible_visual_window(
 }
 
 fn value_or_dash(value: &str) -> &str {
-    if value.is_empty() {
-        "-"
-    } else {
-        value
-    }
+    if value.is_empty() { "-" } else { value }
 }
 
 fn preview_with_score(entry: &Entry, score: i64) -> Vec<Line<'static>> {

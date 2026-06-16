@@ -1,22 +1,18 @@
 mod history;
+mod model;
 mod parser;
 mod tmux;
 mod ui;
 
 use crate::tmux::tmux_sessions;
-use std::path::Path;
 
 fn main() -> anyhow::Result<()> {
-    let ssh_config_path = dirs::home_dir()
-        .map(|home| home.join(".ssh/config"))
-        .unwrap_or_else(|| Path::new(".ssh/config").to_path_buf());
 
-    let hosts = parser::parse_ssh_config(&ssh_config_path)?;
-    let containers = parser::parse_docker_containers()?;
-    let tmux_paths_and_sessions = parser::tmux_paths_and_sessions()?;
     let active_tmux_sessions = tmux_sessions()?;
 
-    if let Some(action) = ui::run(hosts, containers, tmux_paths_and_sessions)? {
+    let entries = parser::build_entries(&active_tmux_sessions)?;
+
+    if let Some(action) = ui::run(entries)? {
         match action {
             ui::UiAction::LaunchSsh(alias) => {
                 tmux::launch_ssh_session(&alias, &active_tmux_sessions)?

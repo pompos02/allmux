@@ -1,7 +1,7 @@
 use crate::history::History;
 use crate::model::Entry;
 use crate::search::{SearchMatch, filtered_matches};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 use crossterm::execute;
 use crossterm::terminal::{
@@ -13,6 +13,7 @@ use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
+use std::fs;
 use std::io::{self, Write};
 use std::process::{Command, Stdio};
 
@@ -39,6 +40,11 @@ struct StatusMessage {
     kind: StatusKind,
 }
 
+struct Theme {
+    match_highlight_bg: Color,
+    matched_char_fg: Color,
+}
+
 impl Entry {
     fn marker_color(&self) -> Color {
         match self {
@@ -48,7 +54,7 @@ impl Entry {
         }
     }
 
-    fn list_line(&self, matched_indices: &[usize], selected: bool) -> Line<'static> {
+    fn list_line(&self, matched_indices: &[usize], selected: bool, theme: &Theme) -> Line<'static> {
         match self {
             Entry::Tmux(session) => {
                 let search_fields = session.search_fields();
@@ -70,6 +76,7 @@ impl Entry {
                         matched_indices,
                         display_offset,
                         selected,
+                        theme,
                         Style::default().fg(Color::White),
                     ));
                     spans.push(Span::styled(
@@ -87,6 +94,7 @@ impl Entry {
                         matched_indices,
                         display_offset,
                         selected,
+                        theme,
                         Style::default().fg(Color::White),
                     ));
                 }
@@ -110,6 +118,7 @@ impl Entry {
                     matched_indices,
                     search_field_offset(&search_fields, 0),
                     selected,
+                    theme,
                     Style::default().fg(Color::White),
                 ));
                 if host.is_active_tmux {
@@ -129,6 +138,7 @@ impl Entry {
                     matched_indices,
                     search_field_offset(&search_fields, 1),
                     selected,
+                    theme,
                     Style::default().fg(Color::DarkGray),
                 ));
                 Line::from(spans)
@@ -155,6 +165,7 @@ impl Entry {
                     matched_indices,
                     search_field_offset(&search_fields, 0),
                     selected,
+                    theme,
                     Style::default().fg(Color::White),
                 ));
                 if container.is_active_tmux {
@@ -174,6 +185,7 @@ impl Entry {
                     matched_indices,
                     search_field_offset(&search_fields, 1),
                     selected,
+                    theme,
                     status_style,
                 ));
                 Line::from(spans)
@@ -311,9 +323,9 @@ struct App {
     status_message: Option<StatusMessage>,
     preview_expanded: bool,
     history: History,
+    color_variant: String,
 }
 
-const MATCH_HIGHLIGHT_BG: Color = Color::Rgb(94, 241, 255);
 const SELECTED_BG: Color = Color::Gray;
 const SUBTLE_BORDER: Color = Color::Rgb(52, 52, 52);
 
@@ -326,7 +338,18 @@ impl App {
             status_message: None,
             preview_expanded: false,
             history: History::load(),
+            color_variant: "dark".to_string(),
         }
+    }
+
+    fn color(mut self, color: &str) -> Self {
+        self.color_variant = match color.trim() {
+            "light" => "light",
+            _ => "dark",
+        }
+        .to_string();
+
+        self
     }
 
     fn filtered_matches(&self) -> Vec<SearchMatch> {
@@ -397,6 +420,57 @@ impl App {
         self.preview_expanded = !self.preview_expanded;
         self.status_message = None;
     }
+
+    fn theme(&self) -> Theme {
+        match self.color_variant.as_str() {
+            "light" => Theme {
+                match_highlight_bg: Color::Rgb(209, 0, 191),
+                matched_char_fg: Color::Black,
+            },
+            _ => Theme {
+                match_highlight_bg: Color::Rgb(94, 241, 255),
+                matched_char_fg: Color::Black,
+            },
+        }
+    }
+
+    fn switch_theme(&mut self) -> Result<()> {
+        let file = dirs::cache_dir()
+            .unwrap_or_else(std::env::temp_dir)
+            .join("allmux")
+            .join("color_variant");
+
+        match self.color_variant.as_str() {
+            "dark" => {
+                fs::write(&file, "light").context("Error writing to color_variant config file")?;
+                self.color_variant = "light".to_string();
+            }
+            "light" => {
+                fs::write(&file, "dark").context("Error writing to color_variant config file")?;
+                self.color_variant = "dark".to_string();
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+}
+
+fn get_color_variant() -> Result<String> {
+    let file = dirs::cache_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join("allmux")
+        .join("color_variant");
+
+    if !file.exists() {
+        if let Some(parent) = file.parent() {
+            fs::create_dir_all(parent).context("Error creating the allmux cache directory")?;
+        }
+        fs::write(&file, "dark").context("Error creating the color_variant config file")?;
+    }
+
+    fs::read_to_string(file)
+        .map(|color| color.trim().to_string())
+        .context("Error opening the color_variant config file")
 }
 
 pub fn run(entries: Vec<Entry>) -> Result<Option<UiAction>> {
@@ -408,7 +482,10 @@ pub fn run(entries: Vec<Entry>) -> Result<Option<UiAction>> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let result = run_app(&mut terminal, App::new(entries));
+    let theme = get_color_variant()?;
+    let app = App::new(entries).color(&theme);
+
+    let result = run_app(&mut terminal, app);
 
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
@@ -425,7 +502,7 @@ fn run_app(
         terminal.draw(|frame| draw(frame, &mut app))?;
 
         if let Event::Key(key) = event::read()? {
-            match handle_key(key, &mut app) {
+            match handle_key(key, &mut app)? {
                 KeyAction::Continue => {}
                 KeyAction::Quit => return Ok(None),
                 KeyAction::Select(action) => return Ok(Some(action)),
@@ -434,16 +511,17 @@ fn run_app(
     }
 }
 
-fn handle_key(key: KeyEvent, app: &mut App) -> KeyAction {
+/// Keymaps definitions
+fn handle_key(key: KeyEvent, app: &mut App) -> Result<KeyAction> {
     match key.code {
         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            return KeyAction::Quit;
+            return Ok(KeyAction::Quit);
         }
-        KeyCode::Char('q') if app.query.is_empty() => return KeyAction::Quit,
-        KeyCode::Esc => return KeyAction::Quit,
+        KeyCode::Char('q') if app.query.is_empty() => return Ok(KeyAction::Quit),
+        KeyCode::Esc => return Ok(KeyAction::Quit),
         KeyCode::Enter => {
             if let Some(action) = app.selected_action() {
-                return KeyAction::Select(action);
+                return Ok(KeyAction::Select(action));
             }
         }
         KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -454,6 +532,10 @@ fn handle_key(key: KeyEvent, app: &mut App) -> KeyAction {
             delete_previous_word(&mut app.query);
             app.clamp_selection();
         }
+        KeyCode::Char('t') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.switch_theme()?;
+        }
+
         KeyCode::Char('y') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             app.status_message = match app.selected_entry() {
                 Some(entry_info) => match copy_to_tmux_clipboard(&entry_info) {
@@ -495,7 +577,7 @@ fn handle_key(key: KeyEvent, app: &mut App) -> KeyAction {
         _ => {}
     }
 
-    KeyAction::Continue
+    Ok(KeyAction::Continue)
 }
 
 fn draw(frame: &mut ratatui::Frame, app: &mut App) {
@@ -509,6 +591,7 @@ fn draw(frame: &mut ratatui::Frame, app: &mut App) {
     let left_area = panes.as_ref().map_or(area, |panes| panes[0]);
 
     let filtered = app.filtered_matches();
+    let theme = app.theme();
 
     let left_block = Block::default()
         .borders(Borders::ALL)
@@ -539,7 +622,7 @@ fn draw(frame: &mut ratatui::Frame, app: &mut App) {
             let entry = &app.entries[matched.index];
             let selected = visual_index == selected_visual;
             let line = selection_marker_line(
-                entry.list_line(&matched.indices, selected),
+                entry.list_line(&matched.indices, selected, &theme),
                 selected,
                 entry.marker_color(),
             );
@@ -791,6 +874,7 @@ fn highlighted_text(
     matched_indices: &[usize],
     offset: usize,
     selected: bool,
+    theme: &Theme,
     base_style: Style,
 ) -> Vec<Span<'static>> {
     text.chars()
@@ -798,8 +882,8 @@ fn highlighted_text(
         .map(|(index, character)| {
             let style = if matched_indices.contains(&(index + offset)) {
                 base_style
-                    .fg(Color::Black)
-                    .bg(MATCH_HIGHLIGHT_BG)
+                    .fg(theme.matched_char_fg)
+                    .bg(theme.match_highlight_bg)
                     .add_modifier(Modifier::BOLD)
             } else {
                 selected_style(base_style, selected)

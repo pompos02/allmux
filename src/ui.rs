@@ -108,7 +108,7 @@ impl Entry {
                     Span::styled(
                         "",
                         Style::default()
-                            .fg(Color::Cyan)
+                            .fg(Color::LightMagenta)
                             .add_modifier(Modifier::BOLD),
                     ),
                     styled_gap(" ", selected),

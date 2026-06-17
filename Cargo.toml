@@ -8,4 +8,4 @@ anyhow = "1.0.102"
 crossterm = "0.29.0"
 dirs = "6.0.0"
 ratatui = "0.30.0"
-fuzzy-matcher = "0.3.7"
+neo_frizbee = { version = "=0.10.2", features = ["match_end_col"] }

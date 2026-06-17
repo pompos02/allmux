@@ -510,12 +510,13 @@ impl App {
         }
     }
 
-    fn selected_ssh_hostname(&self) -> Option<String> {
+    fn selected_entry(&self) -> Option<String> {
         let filtered = self.filtered_matches();
         let matched = filtered.get(self.selected)?;
 
         match &self.entries[matched.index] {
             Entry::Ssh(host) if !host.hostname.is_empty() => Some(host.hostname.clone()),
+            Entry::Tmux(session) if session.full_path.is_some() => session.full_path.clone(),
             _ => None,
         }
     }
@@ -582,19 +583,19 @@ fn handle_key(key: KeyEvent, app: &mut App) -> KeyAction {
             app.clamp_selection();
         }
         KeyCode::Char('y') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            app.status_message = match app.selected_ssh_hostname() {
-                Some(hostname) => match copy_to_tmux_clipboard(&hostname) {
+            app.status_message = match app.selected_entry() {
+                Some(entry_info) => match copy_to_tmux_clipboard(&entry_info) {
                     Ok(()) => Some(StatusMessage {
-                        text: format!("Copied hostname: {hostname}"),
+                        text: format!("Copied: {entry_info}"),
                         kind: StatusKind::Success,
                     }),
                     Err(error) => Some(StatusMessage {
-                        text: format!("Failed to copy hostname: {error}"),
+                        text: format!("Failed to copy: {error}"),
                         kind: StatusKind::Error,
                     }),
                 },
                 None => Some(StatusMessage {
-                    text: "Ctrl-Y only copies SSH entries with a hostname".to_string(),
+                    text: "Ctrl-Y only copies SSH entries with a hostname, and session full paths".to_string(),
                     kind: StatusKind::Warning,
                 }),
             };

@@ -1,13 +1,13 @@
 mod history;
 mod model;
 mod parser;
+mod search;
 mod tmux;
 mod ui;
 
 use crate::tmux::tmux_sessions;
 
 fn main() -> anyhow::Result<()> {
-
     let active_tmux_sessions = tmux_sessions()?;
 
     let entries = parser::build_entries(&active_tmux_sessions)?;

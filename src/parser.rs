@@ -322,9 +322,7 @@ pub fn parse_docker_containers() -> Result<Vec<DockerContainer>> {
     Ok(containers)
 }
 
-pub fn build_entries(
-    active_sessions: &[String],
-) -> Result<Vec<Entry>> {
+pub fn build_entries(active_sessions: &[String]) -> Result<Vec<Entry>> {
     let ssh_config_path = dirs::home_dir()
         .map(|home| home.join(".ssh/config"))
         .unwrap_or_else(|| Path::new(".ssh/config").to_path_buf());

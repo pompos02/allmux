@@ -1,13 +1,12 @@
 use crate::history::History;
-use crate::model::{DockerContainer, Entry, SshHost, TmuxSession};
+use crate::model::Entry;
+use crate::search::{SearchMatch, filtered_matches};
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 use crossterm::execute;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
-use fuzzy_matcher::FuzzyMatcher;
-use fuzzy_matcher::skim::SkimMatcherV2;
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
@@ -41,22 +40,6 @@ struct StatusMessage {
 }
 
 impl Entry {
-    fn is_active_tmux(&self) -> bool {
-        match self {
-            Entry::Tmux(session) => session.is_active,
-            Entry::Ssh(host) => host.is_active_tmux,
-            Entry::Docker(container) => container.is_active_tmux,
-        }
-    }
-
-    fn type_rank(&self) -> u8 {
-        match self {
-            Entry::Tmux(_) => 3,
-            Entry::Ssh(_) => 2,
-            Entry::Docker(_) => 1,
-        }
-    }
-
     fn marker_color(&self) -> Color {
         match self {
             Entry::Ssh(_) => Color::Cyan,
@@ -68,7 +51,7 @@ impl Entry {
     fn list_line(&self, matched_indices: &[usize], selected: bool) -> Line<'static> {
         match self {
             Entry::Tmux(session) => {
-                let search_fields = tmux_search_fields(session);
+                let search_fields = session.search_fields();
                 let display_text = search_fields[0];
                 let display_offset = search_field_offset(&search_fields, 0);
                 let mut spans = vec![
@@ -112,7 +95,7 @@ impl Entry {
             }
 
             Entry::Ssh(host) => {
-                let search_fields = ssh_search_fields(host);
+                let search_fields = host.search_fields();
                 let mut spans = vec![
                     Span::styled(
                         "",
@@ -151,7 +134,7 @@ impl Entry {
                 Line::from(spans)
             }
             Entry::Docker(container) => {
-                let search_fields = docker_search_fields(container);
+                let search_fields = container.search_fields();
                 let status_style = if container.status {
                     Style::default().fg(Color::Green)
                 } else {
@@ -187,7 +170,7 @@ impl Entry {
                 }
                 spans.push(styled_gap("  ", selected));
                 spans.extend(highlighted_text(
-                    docker_status_label(container),
+                    container.status_label(),
                     matched_indices,
                     search_field_offset(&search_fields, 1),
                     selected,
@@ -195,68 +178,6 @@ impl Entry {
                 ));
                 Line::from(spans)
             }
-        }
-    }
-
-    fn search_fields(&self) -> Vec<&str> {
-        match self {
-            Entry::Ssh(host) => {
-                let mut fields = ssh_search_fields(host);
-                fields.push("ssh");
-                fields
-            }
-            Entry::Docker(container) => {
-                let mut fields = docker_search_fields(container);
-                fields.push("docker");
-                fields.push("doc");
-                fields
-            }
-            Entry::Tmux(session) => {
-                let mut fields = tmux_search_fields(session);
-                fields.push("tmux");
-                fields.push("mux");
-                fields
-            }
-        }
-    }
-
-    fn display_search_fields(&self) -> Vec<&str> {
-        match self {
-            Entry::Ssh(host) => {
-                let fields = ssh_search_fields(host);
-                vec![fields[0], fields[1]]
-            }
-            Entry::Docker(container) => {
-                let fields = docker_search_fields(container);
-                vec![fields[0], fields[1]]
-            }
-            Entry::Tmux(session) => {
-                let fields = tmux_search_fields(session);
-                vec![fields[0]]
-            }
-        }
-    }
-
-    fn display_match_indices(&self, matcher: &SkimMatcherV2, query: &str) -> Option<Vec<usize>> {
-        let fields = self.display_search_fields();
-        let text = join_search_fields(&fields);
-        matcher
-            .fuzzy_indices(&text, query)
-            .map(|(_, indices)| indices)
-    }
-
-    fn search_text(&self) -> String {
-        join_search_fields(&self.search_fields())
-    }
-
-    fn history_key(&self) -> String {
-        match self {
-            Entry::Ssh(host) => format!("ssh:{}", host.alias),
-            Entry::Docker(container) => format!("docker:{}", container.name),
-            Entry::Tmux(session) => match &session.full_path {
-                Some(path) => format!("tmux:{path}"),
-                None => format!("tmux-session:{}", session.session_name),
-            },
         }
     }
 
@@ -392,12 +313,6 @@ struct App {
     history: History,
 }
 
-struct Match {
-    index: usize,
-    score: i64,
-    indices: Vec<usize>,
-}
-
 const MATCH_HIGHLIGHT_BG: Color = Color::Rgb(94, 241, 255);
 const SELECTED_BG: Color = Color::Gray;
 const SUBTLE_BORDER: Color = Color::Rgb(52, 52, 52);
@@ -414,51 +329,8 @@ impl App {
         }
     }
 
-    fn filtered_matches(&self) -> Vec<Match> {
-        let matcher = SkimMatcherV2::default();
-
-        let mut matches: Vec<Match> = self
-            .entries
-            .iter()
-            .enumerate()
-            .filter_map(|(index, entry)| {
-                if self.query.is_empty() {
-                    return Some(Match {
-                        index,
-                        score: self.history.score(&entry.history_key()),
-                        indices: Vec::new(),
-                    });
-                }
-
-                matcher
-                    .fuzzy_indices(&entry.search_text(), &self.query)
-                    .map(|(score, indices)| Match {
-                        index,
-                        score: score
-                            + score.saturating_mul(self.history.score(&entry.history_key())) / 100,
-                        indices: entry
-                            .display_match_indices(&matcher, &self.query)
-                            .unwrap_or(indices),
-                    })
-            })
-            .collect();
-
-        matches.sort_by(|left, right| {
-            let left_entry = &self.entries[left.index];
-            let right_entry = &self.entries[right.index];
-
-            right
-                .score
-                .cmp(&left.score)
-                .then_with(|| {
-                    right_entry
-                        .is_active_tmux()
-                        .cmp(&left_entry.is_active_tmux())
-                })
-                .then_with(|| right_entry.type_rank().cmp(&left_entry.type_rank()))
-                .then_with(|| left.index.cmp(&right.index))
-        });
-        matches
+    fn filtered_matches(&self) -> Vec<SearchMatch> {
+        filtered_matches(&self.entries, &self.query, &self.history)
     }
 
     fn clamp_selection(&mut self) {
@@ -595,7 +467,8 @@ fn handle_key(key: KeyEvent, app: &mut App) -> KeyAction {
                     }),
                 },
                 None => Some(StatusMessage {
-                    text: "Ctrl-Y only copies SSH entries with a hostname, and session full paths".to_string(),
+                    text: "Ctrl-Y only copies SSH entries with a hostname, and session full paths"
+                        .to_string(),
                     kind: StatusKind::Warning,
                 }),
             };
@@ -853,68 +726,6 @@ fn permission_char_color(character: char) -> Color {
         '-' => Color::default(),
         _ => Color::Gray,
     }
-}
-
-fn ssh_search_fields(host: &SshHost) -> Vec<&str> {
-    vec![
-        &host.alias,
-        &host.hostname,
-        &host.user,
-        host.description.as_deref().unwrap_or_default(),
-    ]
-}
-
-fn docker_search_fields(container: &DockerContainer) -> Vec<&str> {
-    vec![
-        &container.name,
-        docker_status_label(container),
-        &container.status_text,
-        &container.id,
-        &container.image,
-        &container.command,
-        &container.created_at,
-        &container.ports,
-    ]
-}
-
-fn tmux_search_fields(session: &TmuxSession) -> Vec<&str> {
-    let display_text = tmux_display_text(session);
-    let mut fields = vec![display_text];
-
-    if display_text != session.session_name && !display_text.contains(&session.session_name) {
-        fields.push(&session.session_name);
-    }
-
-    if let Some(full_path) = session.full_path.as_deref() {
-        if full_path != display_text {
-            fields.push(full_path);
-        }
-    }
-
-    fields
-}
-
-fn tmux_display_text(session: &TmuxSession) -> &str {
-    if session.is_active {
-        &session.session_name
-    } else {
-        session
-            .full_path
-            .as_deref()
-            .unwrap_or(&session.session_name)
-    }
-}
-
-fn docker_status_label(container: &DockerContainer) -> &'static str {
-    if container.status {
-        "running"
-    } else {
-        "stopped"
-    }
-}
-
-fn join_search_fields(fields: &[&str]) -> String {
-    fields.join(" ")
 }
 
 fn search_field_offset(fields: &[&str], field_index: usize) -> usize {

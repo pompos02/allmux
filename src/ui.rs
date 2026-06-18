@@ -41,8 +41,19 @@ struct StatusMessage {
 }
 
 struct Theme {
+    selected_bg: Color,
     match_highlight_bg: Color,
     matched_char_fg: Color,
+}
+
+impl Theme {
+    fn selected_style(&self, style: Style, selected: bool) -> Style {
+        if selected {
+            style.bg(self.selected_bg).add_modifier(Modifier::BOLD)
+        } else {
+            style
+        }
+    }
 }
 
 impl Entry {
@@ -67,7 +78,7 @@ impl Entry {
                             .fg(Color::Green)
                             .add_modifier(Modifier::BOLD),
                     ),
-                    styled_gap(" ", selected),
+                    styled_gap(" ", selected, theme),
                 ];
 
                 if session.is_active {
@@ -81,7 +92,7 @@ impl Entry {
                     ));
                     spans.push(Span::styled(
                         "*",
-                        selected_style(
+                        theme.selected_style(
                             Style::default()
                                 .fg(Color::Green)
                                 .add_modifier(Modifier::BOLD),
@@ -98,7 +109,7 @@ impl Entry {
                         Style::default().fg(Color::White),
                     ));
                 }
-                spans.push(styled_gap("  ", selected));
+                spans.push(styled_gap("  ", selected, theme));
                 Line::from(spans)
             }
 
@@ -111,7 +122,7 @@ impl Entry {
                             .fg(Color::LightMagenta)
                             .add_modifier(Modifier::BOLD),
                     ),
-                    styled_gap(" ", selected),
+                    styled_gap(" ", selected, theme),
                 ];
                 spans.extend(highlighted_text(
                     &host.alias,
@@ -124,7 +135,7 @@ impl Entry {
                 if host.is_active_tmux {
                     spans.push(Span::styled(
                         "*",
-                        selected_style(
+                        theme.selected_style(
                             Style::default()
                                 .fg(Color::Green)
                                 .add_modifier(Modifier::BOLD),
@@ -132,7 +143,7 @@ impl Entry {
                         ),
                     ));
                 }
-                spans.push(styled_gap("  ", selected));
+                spans.push(styled_gap("  ", selected, theme));
                 spans.extend(highlighted_text(
                     &host.hostname,
                     matched_indices,
@@ -158,7 +169,7 @@ impl Entry {
                             .fg(Color::Blue)
                             .add_modifier(Modifier::BOLD),
                     ),
-                    styled_gap(" ", selected),
+                    styled_gap(" ", selected, theme),
                 ];
                 spans.extend(highlighted_text(
                     &container.name,
@@ -171,7 +182,7 @@ impl Entry {
                 if container.is_active_tmux {
                     spans.push(Span::styled(
                         "*",
-                        selected_style(
+                        theme.selected_style(
                             Style::default()
                                 .fg(Color::Green)
                                 .add_modifier(Modifier::BOLD),
@@ -179,7 +190,7 @@ impl Entry {
                         ),
                     ));
                 }
-                spans.push(styled_gap("  ", selected));
+                spans.push(styled_gap("  ", selected, theme));
                 spans.extend(highlighted_text(
                     container.status_label(),
                     matched_indices,
@@ -326,7 +337,6 @@ struct App {
     color_variant: String,
 }
 
-const SELECTED_BG: Color = Color::Gray;
 const SUBTLE_BORDER: Color = Color::Rgb(52, 52, 52);
 
 impl App {
@@ -424,10 +434,12 @@ impl App {
     fn theme(&self) -> Theme {
         match self.color_variant.as_str() {
             "light" => Theme {
+                selected_bg: Color::Rgb(228, 231, 234),
                 match_highlight_bg: Color::Rgb(209, 0, 191),
                 matched_char_fg: Color::Black,
             },
             _ => Theme {
+                selected_bg: Color::Rgb(60, 64, 72),
                 match_highlight_bg: Color::Rgb(94, 241, 255),
                 matched_char_fg: Color::Black,
             },
@@ -627,7 +639,7 @@ fn draw(frame: &mut ratatui::Frame, app: &mut App) {
                 entry.marker_color(),
             );
 
-            ListItem::new(line).style(selected_style(Style::default(), selected))
+            ListItem::new(line).style(theme.selected_style(Style::default(), selected))
         })
         .collect();
 
@@ -886,7 +898,7 @@ fn highlighted_text(
                     .bg(theme.match_highlight_bg)
                     .add_modifier(Modifier::BOLD)
             } else {
-                selected_style(base_style, selected)
+                theme.selected_style(base_style, selected)
             };
 
             Span::styled(character.to_string(), style)
@@ -894,8 +906,8 @@ fn highlighted_text(
         .collect()
 }
 
-fn styled_gap(text: &'static str, selected: bool) -> Span<'static> {
-    Span::styled(text, selected_style(Style::default(), selected))
+fn styled_gap(text: &'static str, selected: bool, theme: &Theme) -> Span<'static> {
+    Span::styled(text, theme.selected_style(Style::default(), selected))
 }
 
 fn selection_marker_line(
@@ -905,19 +917,11 @@ fn selection_marker_line(
 ) -> Line<'static> {
     let marker = if selected { "▌ " } else { "  " };
     let style = if selected {
-        Style::default().fg(marker_color).bg(SELECTED_BG)
+        Style::default().fg(marker_color)
     } else {
         Style::default()
     };
 
     line.spans.insert(0, Span::styled(marker, style));
     line
-}
-
-fn selected_style(style: Style, selected: bool) -> Style {
-    if selected {
-        style.bg(SELECTED_BG).add_modifier(Modifier::BOLD)
-    } else {
-        style
-    }
 }

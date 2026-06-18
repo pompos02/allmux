@@ -12,7 +12,7 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
+use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph, Wrap};
 use std::fs;
 use std::io::{self, Write};
 use std::process::{Command, Stdio};
@@ -643,17 +643,8 @@ fn draw(frame: &mut ratatui::Frame, app: &mut App) {
         })
         .collect();
 
-    let list = List::new(items)
-        .highlight_style(Style::default())
-        .highlight_symbol("");
-
-    let mut state = ListState::default();
-    if filtered.is_empty() || list_height == 0 {
-        state.select(None);
-    } else {
-        state.select(Some(selected_visual - visible_window.start));
-    }
-    frame.render_stateful_widget(list, left_sections[1], &mut state);
+    let list = List::new(items);
+    frame.render_widget(list, left_sections[1]);
 
     let divider = Paragraph::new("").block(
         Block::default()

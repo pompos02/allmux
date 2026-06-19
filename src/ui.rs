@@ -436,12 +436,12 @@ impl App {
             "light" => Theme {
                 selected_bg: Color::Rgb(228, 231, 234),
                 match_highlight_bg: Color::Rgb(209, 0, 191),
-                matched_char_fg: Color::Black,
+                matched_char_fg: Color::Rgb(0, 0, 0),
             },
             _ => Theme {
                 selected_bg: Color::Rgb(60, 64, 72),
                 match_highlight_bg: Color::Rgb(94, 241, 255),
-                matched_char_fg: Color::Black,
+                matched_char_fg: Color::Rgb(0, 0, 0),
             },
         }
     }

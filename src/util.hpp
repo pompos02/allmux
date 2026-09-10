@@ -11,10 +11,32 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <vector>
+#include <algorithm>
+
+#include <string_view>
+#include "logger.hpp"
+
+#define MAKE_CCMD(name, ...) \
+    constexpr std::string_view name[] = { __VA_ARGS__ }
+
+#define MAKE_CMD(name, ...) \
+    std::string_view name[] = { __VA_ARGS__ }
+
 
 namespace fs = std::filesystem;
-inline std::string_view
+
+inline std::string
 trim(std::string_view value)
+{
+  const char *begin = value.data();
+  const char *end = begin + value.size();
+  for (; begin != end && std::isspace(*begin); ++begin) { }
+  for (; end != begin && std::isspace(*(end - 1)); --end) { }
+  return std::string(begin, end);
+}
+
+inline std::string_view
+trim_view(std::string_view value)
 {
   const char *begin = value.data();
   const char *end = begin + value.size();
@@ -45,6 +67,14 @@ get_word(std::string_view value, size_t start, size_t &o_end)
   return value.substr(begin, end - begin);
 }
 
+inline void
+to_lower_inplace(std::string& s)
+{
+  std::ranges::transform(s, s.begin(), [](unsigned char c) {
+      return std::tolower(c);
+  });
+}
+
 inline fs::path
 home_dir()
 {
@@ -60,6 +90,12 @@ config_dir()
 }
 
 inline fs::path
+default_config_path()
+{
+  return config_dir() / ".allmux";
+}
+
+inline fs::path
 cache_dir()
 {
   fs::path path;
@@ -68,6 +104,13 @@ cache_dir()
 
   fs::create_directories(path);
   return path;
+}
+
+inline fs::path
+log_file()
+{
+  auto cache = cache_dir();
+  return cache / "allmux.dmp";
 }
 
 inline std::string
@@ -141,3 +184,4 @@ run_command(std::span<const std::string_view> args)
   else                        { result.exit_code = 1; }
   return result;
 }
+

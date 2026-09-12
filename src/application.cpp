@@ -221,7 +221,6 @@ run()
     const Entry* selected_entry = filtered.empty() ? nullptr
                                                    : &entries[filtered[s_selected].index];
     const auto quit = [&] {
-      loader.join();
       app.ExitLoopClosure()();
       return true;
     };
@@ -279,5 +278,4 @@ run()
   });
 
   app.Loop(component);
-  loader.join();
 }

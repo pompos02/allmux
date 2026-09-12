@@ -31,11 +31,13 @@ overlaps(const std::vector<Range> &ranges, size_t begin, size_t end)
 	});
 }
 
+// Match the query with the entry text
+// o_matched_indices will get populated with the indices to highlight
 // Make sure that the passed query is trimmed
-FuzzyMatch
-fuzzy_match(std::string_view text, std::string_view query, std::span<size_t> matched_indices)
+size_t
+fuzzy_match(std::string_view text, std::string_view query, std::span<size_t> o_matched_indices)
 {
-	if (query.empty()) return {.matched = true};
+	if (query.empty()) return 0;
 
 	std::vector<Range> ranges;
 	size_t matched_chars{0};
@@ -63,11 +65,10 @@ fuzzy_match(std::string_view text, std::string_view query, std::span<size_t> mat
 	size_t count{0};
 	for (const auto &range : ranges)
 	{
-		for (auto index = range.begin; index < range.end && count < matched_indices.size(); ++index)
-			matched_indices[count++] = index;
+		for (auto index = range.begin; index < range.end && count < o_matched_indices.size(); ++index)
+			o_matched_indices[count++] = index;
 	}
 
-	return {.matched = true,
-			.score = text.empty() ? 0 : (int)(matched_chars * 100 / text.size()),
-			.indices = matched_indices.first(count)};
+	return  text.empty() ? 0 : (int)(matched_chars * 100 / text.size());
 }
+

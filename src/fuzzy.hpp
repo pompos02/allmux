@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <span>
 #include <string_view>
 
@@ -9,5 +10,5 @@ struct FuzzyMatch {
   std::span<const size_t> indices{};
 };
 
-[[nodiscard]] FuzzyMatch
-fuzzy_match(std::string_view text, std::string_view query, std::span<size_t> matched_indices);
+[[nodiscard]] size_t
+fuzzy_match(std::string_view text, std::string_view query, std::span<size_t> o_matched_indices);

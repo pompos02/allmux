@@ -3,6 +3,6 @@
 pid="$(pgrep -n -x allmux)"
 
 exec gdb -q -tui "build/debug/allmux" \
-  -ex "set scheduler-locking off" \
   -ex "attach $pid" \
-  -ex "break /src/application.cpp:206"
+  -ex "set scheduler-locking off" \
+  -ex "break src/tmux.hpp:86"

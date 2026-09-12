@@ -75,7 +75,7 @@ docker_entries(const Entries& active_entries)
 {
   MAKE_CMD(args, "docker", "ps", "-a", "--format", "{{.Names}}\t{{.Status}}");
   CommandResult result = run_command(args);
-  if (result.exit_code != 0) { WriteLog("Error on container extraction"); }
+  if (result.exit_code != 0) { WriteLog("Error on container extraction: {}", result.output); }
 
   Entries entries;
   std::istringstream lines{result.output};

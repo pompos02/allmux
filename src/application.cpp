@@ -232,7 +232,7 @@ run()
     {
       if (selected_entry == nullptr) { return true; }
       record_history(history_entries, selected_entry->key());
-      execute(*selected_entry, entries);
+      execute(*selected_entry, active_entries);
       return quit();
     }
     if (event == Event::ArrowUp || event == Event::CtrlK)

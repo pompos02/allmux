@@ -81,10 +81,10 @@ inline void switch_to(std::string_view target)
 
 /* execute entry specific action called when an entry is pressed */
 inline void
-execute(const Entry& entry, const Entries& entries)
+execute(const Entry& entry, const Entries& active_entries)
 {
   std::string session_name{entry.key()};
-  if (!std::ranges::contains(entries, entry.key(), &Entry::key))
+  if (!std::ranges::contains(active_entries, entry.key(), &Entry::key))
   {
     auto target_path = home_dir();
     if (entry.kind() == EntryKind::TmuxEntry && !entry.active())

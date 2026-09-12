@@ -1,4 +1,3 @@
-#include <expected>
 #include <fstream>
 #include <sstream>
 #include <algorithm>
@@ -8,18 +7,18 @@
 #include "catalog.hpp"
 #include "util.hpp"
 
-  inline bool
-is_active(std::string_view s)
+inline bool
+is_active(const Entries& active_entries, std::string_view s)
 {
-  return std::ranges::contains(g_active_sessions, s);
+  return std::ranges::contains(active_entries, s, &Entry::key);
 }
 
 /* pasrse ~/.ssh/config and return the hosts */
-  std::expected<Entries, std::string>
-ssh_entries(const fs::path &ssh_config_path)
+Entries
+ssh_entries(const Entries& active_entries, const fs::path &ssh_config_path)
 {
   std::fstream input{ssh_config_path};
-  if (!input) return std::unexpected("Error opening: " + ssh_config_path.string());
+  if (!input) { WriteLog("Error opening: {}", ssh_config_path.string()); }
 
   Entries entries;
   std::vector<size_t> current_hosts;
@@ -39,7 +38,7 @@ ssh_entries(const fs::path &ssh_config_path)
       for (std::string alias; fields >> alias;)
       {
         if (alias[0] == '!' || alias.contains('*') || alias.contains('?')) { continue; };
-        entries.push_back(SshEntry{ .key = alias, .active = is_active(alias)});
+        entries.push_back(SshEntry{ .key = alias, .active = is_active(active_entries, alias)});
         current_hosts.push_back(entries.size() - 1);
       }
     }
@@ -70,13 +69,13 @@ ssh_entries(const fs::path &ssh_config_path)
 }
 
 /* get all docker containers (docker ps -a)*/
-  std::expected<Entries, std::string>
-docker_entries()
+Entries
+docker_entries(const Entries& active_entries)
 
 {
   MAKE_CMD(args, "docker", "ps", "-a", "--format", "{{.Names}}\t{{.Status}}");
   CommandResult result = run_command(args);
-  if (result.exit_code != 0) { return std::unexpected("Error on container extraction"); }
+  if (result.exit_code != 0) { WriteLog("Error on container extraction"); }
 
   Entries entries;
   std::istringstream lines{result.output};
@@ -88,7 +87,7 @@ docker_entries()
     auto name = line.substr(0, seperator);
     entries.push_back(DockerEntry{.key = name,
         .running = line.substr(seperator + 1).starts_with("Up"),
-        .active = is_active(name)});
+        .active = is_active(active_entries, name)});
   }
 
   return entries;
@@ -96,8 +95,8 @@ docker_entries()
 
 
 /* Parse the .allmux config file and get the tmux paths */
-  std::expected<Entries, std::string>
-tmux_entries()
+Entries
+tmux_entries(const Entries& active_entries)
 {
   const auto roots_file = config_dir() / ".allmux";
   std::ifstream input{roots_file};
@@ -120,10 +119,9 @@ tmux_entries()
 
       entries.push_back(TmuxEntry{.key = fname,
           .path = entry.path().string(),
-          .active = is_active(fname)});
+          .active = is_active(active_entries, fname)});
     }
 
   }
   return entries;
 }
-

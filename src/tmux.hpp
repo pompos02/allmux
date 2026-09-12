@@ -6,11 +6,11 @@
 #include <vector>
 
 /* get all the active tmux sessions */
-inline std::vector<std::string>
+inline Entries
 active_tmux_sessions()
 {
 
-  MAKE_CMD(cmd, "tmux", "list-sessions", "-F", "#{session_name}");
+  MAKE_CMD(cmd, "tmux", "list-sessions", "-F", "#{session_name}\t#{pane_current_path}");
   CommandResult result = run_command(cmd);
   if (result.exit_code != 0)
   {
@@ -18,14 +18,25 @@ active_tmux_sessions()
     return {};
   }
 
-  std::vector<std::string> sessions;
+  Entries output;
   std::istringstream lines{result.output};
   for (std::string line; std::getline(lines, line);)
   {
     if (auto trimmed = trim(line); !trimmed.empty())
-      sessions.push_back(std::move(trimmed));
+    {
+      auto tab = line.find('\t');
+      std::string name = line.substr(0, tab);
+      std::string path;
+      if (tab == std::string::npos) { path = home_dir(); }
+      else                          { path = line.substr(tab + 1); }
+
+      if (!name.empty())
+      {
+        output.emplace_back(TmuxEntry{name, path, true});
+      }
+    }
   }
-  return sessions;
+  return output;
 }
 
 /* create a new tmux session, we  */
@@ -70,10 +81,10 @@ inline void switch_to(std::string_view target)
 
 /* execute entry specific action called when an entry is pressed */
 inline void
-execute(Entry& entry)
+execute(const Entry& entry, const Entries& entries)
 {
   std::string session_name{entry.key()};
-  if(!std::ranges::contains(g_active_sessions, entry.key()))
+  if (!std::ranges::contains(entries, entry.key(), &Entry::key))
   {
     auto target_path = home_dir();
     if (entry.kind() == EntryKind::TmuxEntry && !entry.active())

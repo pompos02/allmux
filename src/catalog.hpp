@@ -1,14 +1,11 @@
 #pragma once
 
 #include "util.hpp"
-#include <expected>
 #include <optional>
 #include <variant>
 #include <string>
 #include <vector>
 #include <filesystem>
-
-inline std::vector<std::string> g_active_sessions{};
 
 struct SshEntry
 {
@@ -38,7 +35,9 @@ enum class EntryKind
 {
   SshEntry,     // 0
   DockerEntry,  // 1
-  TmuxEntry     // 2
+  TmuxEntry,    // 2
+
+  Count,        // keep last
 };
 
 struct Entry
@@ -61,6 +60,19 @@ struct Entry
   }
   EntryKind kind() const { return static_cast<EntryKind>(data.index()); }
   bool active() const { return std::visit([](const auto& value) { return value.active; }, data); }
+  std::string info() const
+  {
+    return std::visit([](const auto& value) -> std::string{
+      using T = std::remove_cvref_t<decltype(value)>;
+      if constexpr (std::same_as<T, SshEntry>)    { return value.hostname; }
+      if constexpr (std::same_as<T, DockerEntry>) { return value.key; }
+      if constexpr (std::same_as<T, TmuxEntry>)
+      {
+        if (value.active) { return value.key; }
+        return value.path;
+      }
+    }, data);
+  }
 
   Data data;
 };
@@ -74,11 +86,8 @@ struct Action
 
 using Entries = std::vector<Entry>;
 
-std::expected<Entries, std::string>
-ssh_entries(const fs::path &confing_path = home_dir() / ".ssh/config");
+Entries ssh_entries(const Entries& active_entries, const fs::path &confing_path = home_dir() / ".ssh/config");
 
-std::expected<Entries, std::string>
-docker_entries();
+Entries docker_entries(const Entries& active_entries);
 
-std::expected<Entries, std::string>
-tmux_entries();
+Entries tmux_entries(const Entries& active_entries);

@@ -1,10 +1,13 @@
 #include "catalog.hpp"
-#include <exception>
+#include "tmux.hpp"
 #include <print>
 
 int
 main()
 {
+  /* init global active tmux sessions */
+  g_active_sessions = active_tmux_sessions();
+
   auto entries = ssh_entries();
   entries = docker_entries();
   entries = tmux_entries();

@@ -17,7 +17,8 @@ substring_equal_at(std::string_view text, size_t position, std::string_view subs
 	if (position + substr.size() > text.size()) return false;
 	for (size_t i = 0; i < substr.size(); ++i)
 	{
-		if (std::tolower(text[position + i]) != std::tolower(substr[i]))
+		if (std::tolower(static_cast<unsigned char>(text[position + i])) !=
+		    std::tolower(static_cast<unsigned char>(substr[i])))
 			return false;
 	}
 	return true;
@@ -31,17 +32,14 @@ overlaps(const std::vector<Range> &ranges, size_t begin, size_t end)
 	});
 }
 
-// Match the query with the entry text
-// o_matched_indices will get populated with the indices to highlight
-// Make sure that the passed query is trimmed
-size_t
-fuzzy_match(std::string_view text, std::string_view query, std::span<size_t> o_matched_indices)
+FuzzyMatch
+fuzzy_match(std::string_view text, std::string_view query)
 {
-	if (query.empty()) return 0;
+	const auto trm_query = trim(query);
+	if (trm_query.empty()) return {};
 
 	std::vector<Range> ranges;
 	size_t matched_chars{0};
-	const auto trm_query = trim(query);
 	for (size_t begin = 0; begin < trm_query.size();)
 	{
 		size_t end;// this get's populated here       v
@@ -62,13 +60,14 @@ fuzzy_match(std::string_view text, std::string_view query, std::span<size_t> o_m
 	}
 
 	std::ranges::sort(ranges, {}, &Range::begin);
-	size_t count{0};
+	std::vector<size_t> indices;
+	indices.reserve(matched_chars);
 	for (const auto &range : ranges)
 	{
-		for (auto index = range.begin; index < range.end && count < o_matched_indices.size(); ++index)
-			o_matched_indices[count++] = index;
+		for (auto index = range.begin; index < range.end; ++index)
+			indices.push_back(index);
 	}
 
-	return  text.empty() ? 0 : (int)(matched_chars * 100 / text.size());
+	const int score = text.empty() ? 0 : static_cast<int>(matched_chars * 100 / text.size());
+	return {.matched = true, .score = score, .indices = std::move(indices)};
 }
-

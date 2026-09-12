@@ -1,19 +1,16 @@
 #include "fuzzy.hpp"
 #include "history.hpp"
 #include "tmux.hpp"
-#include "util.hpp"
 #include "catalog.hpp"
 
 #include <algorithm>
-#include <ranges>
 #include <cctype>
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/event.hpp>
 #include <ftxui/component/screen_interactive.hpp>
 #include <ftxui/dom/elements.hpp>
-#include <memory>
+#include <print>
 #include <thread>
-#include <variant>
 
 #define IF_VARIANT(Type, name, variant) if (const auto* name = std::get_if<Type>(&(variant)))
 
@@ -55,17 +52,19 @@ static Element
 highlighted(std::string_view text, std::span<const size_t> indices)
 {
   Elements parts;
-  for (size_t i = 0; i < text.size(); ++i)
+  for (size_t i = 0; i < text.size();)
   {
     bool matched = std::ranges::binary_search(indices, i);
     size_t end = i + 1;
-    while (end < text.size() && std::ranges::binary_search(indices, end) == matched);
+    while (end < text.size() && std::ranges::binary_search(indices, end) == matched)
     {
       ++end;
     }
     
     Element part = ftxui::text(std::string{text.substr(i, end - i)});
     parts.push_back(matched ? part | color(Color::Black) | bgcolor(Color::Cyan) : part);
+
+    i = end;
   }
 
   return hbox(std::move(parts));
@@ -86,13 +85,18 @@ matches(Entries& entries, std::string_view query)
   std::vector<Match> result;
   for (size_t i = 0; i < entries.size(); ++i)
   {
-    std::string_view text = entries[i].key();
-    std::vector<size_t> buffer(text.size());
-    size_t fscore = fuzzy_match(text, query, buffer);
-    if (!fscore) { continue; }
+    std::string_view text = entries[i].info();
     int64_t hscore = history_score(hentries, text);
-    int64_t score = fscore + static_cast<int64_t>(fscore * hscore / 60);
-    result.emplace_back(i, score, buffer);
+    if (trim_view(query).empty())
+    { /* empty query gives all entries score of 1 */
+      result.emplace_back(i, 1 + static_cast<int64_t>(hscore * 0.5), std::vector<size_t>{});
+      continue;
+    }
+    auto fuzzy = fuzzy_match(text, query);
+    if (!fuzzy.matched) { continue; }
+
+    int64_t score = fuzzy.score + static_cast<int64_t>(fuzzy.score * hscore / 60);
+    result.emplace_back(i, score, std::move(fuzzy.indices));
   }
 
   // priority sorting
@@ -120,14 +124,14 @@ merge_entries(Entries& entries, Entries& incoming_entries)
     { /* skip the tmux entry if entries with the same name exists */
       auto represented = std::ranges::any_of(entries,[&](const Entry& current){
           return current.kind() != EntryKind::TmuxEntry && incoming.key() == current.key();
-          });
+      });
       if (represented) { return; }
     }
     else
     { /* remove the tmux entry that has the same name with the soon to be merged entry */
       std::erase_if(entries,[&](const Entry& current){
           return current.kind() == EntryKind::TmuxEntry && current.key() == incoming.key();
-          });
+      });
     }
     entries.push_back(incoming);
   }
@@ -138,9 +142,9 @@ template<typename Loader>
 static std::jthread
 launch_loader(Entries& current_entries, ScreenInteractive& screen, Loader loader)
 {
-  return std::jthread([&screen, loader = std::move(loader), current_entries]() mutable {
+  return std::jthread([&screen, loader = std::move(loader), &current_entries]() mutable {
     auto entries = loader();
-    screen.Post([entries = std::move(entries), current_entries]() mutable {
+    screen.Post([entries = std::move(entries), &current_entries]() mutable {
         merge_entries(current_entries, entries);
         g_loading--;
     });
@@ -188,8 +192,11 @@ run()
       Elements row{ text(label(entry.kind())) | color(Color::Black) |
                     bgcolor(color_for(entry.kind())) | bold | style,
                     text(" ") | style,
-                    highlighted(entry.key(), match.indices) | style};
+                    highlighted(entry.info(), match.indices) | style};
       if (entry.active()) { row.push_back(text("*") | color(Color::Green) | style); }
+      row.push_back(filler());
+      row.push_back(text("<" +std::to_string(match.score)+ ">") | style);
+      rows.push_back(hbox(std::move(row)));
     }
     if (g_loading != 0) { rows.push_back(text("Loading Entries") | dim); }
     if (rows.empty())   { rows.push_back(text("No matching entries") | dim); }
@@ -252,7 +259,7 @@ run()
     {
       if (selected_entry != nullptr && copy_info(selected_entry->info()))
       {
-          s_status = "Copied: " + selected_entry->info();
+          s_status = "Copied: " + std::string{selected_entry->info()};
       }
       return true;
     }
@@ -273,4 +280,3 @@ run()
   app.Loop(component);
   loader.join();
 }
-

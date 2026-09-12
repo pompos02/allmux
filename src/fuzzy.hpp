@@ -1,14 +1,15 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string_view>
+#include <vector>
 
-struct FuzzyMatch {
+struct FuzzyMatch
+{
   bool matched{false};
   int score{0};
-  std::span<const size_t> indices{};
+  std::vector<size_t> indices;
 };
 
-[[nodiscard]] size_t
-fuzzy_match(std::string_view text, std::string_view query, std::span<size_t> o_matched_indices);
+[[nodiscard]] FuzzyMatch
+fuzzy_match(std::string_view text, std::string_view query);

@@ -60,17 +60,13 @@ struct Entry
   }
   EntryKind kind() const { return static_cast<EntryKind>(data.index()); }
   bool active() const { return std::visit([](const auto& value) { return value.active; }, data); }
-  std::string info() const
+  std::string_view info() const
   {
-    return std::visit([](const auto& value) -> std::string{
+    return std::visit([](const auto& value) -> std::string_view{
       using T = std::remove_cvref_t<decltype(value)>;
       if constexpr (std::same_as<T, SshEntry>)    { return value.hostname; }
       if constexpr (std::same_as<T, DockerEntry>) { return value.key; }
-      if constexpr (std::same_as<T, TmuxEntry>)
-      {
-        if (value.active) { return value.key; }
-        return value.path;
-      }
+      if constexpr (std::same_as<T, TmuxEntry>)   { return value.active ? value.key : value.path; }
     }, data);
   }
 

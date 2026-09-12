@@ -12,12 +12,10 @@
 #include <unistd.h>
 #include <vector>
 #include <algorithm>
+#include <chrono>
 
 #include <string_view>
 #include "logger.hpp"
-
-#define MAKE_CCMD(name, ...) \
-    constexpr std::string_view name[] = { __VA_ARGS__ }
 
 #define MAKE_CMD(name, ...) \
     std::string_view name[] = { __VA_ARGS__ }
@@ -185,3 +183,11 @@ run_command(std::span<const std::string_view> args)
   return result;
 }
 
+
+inline int64_t
+time_now()
+{
+  using namespace std::chrono;
+  return duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
+
+}

@@ -32,8 +32,8 @@ label(EntryKind kind)
   case EntryKind::SshEntry:    return "SSH";
   case EntryKind::DockerEntry: return "DOC";
   case EntryKind::TmuxEntry:   return "MUX";
+  default: return {};
   }
-  return {};
 }
 
 static Color
@@ -44,8 +44,9 @@ color_for(EntryKind kind)
   case EntryKind::SshEntry:    return Color::Cyan;
   case EntryKind::DockerEntry: return Color::Blue;
   case EntryKind::TmuxEntry:   return Color::Green;
+  default: return Color::Default;
+
   }
-  return Color::Default;
 }
 
 static Element
@@ -85,8 +86,8 @@ matches(Entries& entries, std::string_view query)
   std::vector<Match> result;
   for (size_t i = 0; i < entries.size(); ++i)
   {
-    std::string_view text = entries[i].info();
-    int64_t hscore = history_score(hentries, text);
+    std::string_view text = entries[i].display();
+    int64_t hscore = history_score(hentries, entries[i].info());
     if (trim_view(query).empty())
     { /* empty query gives all entries score of 1 */
       result.emplace_back(i, 1 + static_cast<int64_t>(hscore * 0.5), std::vector<size_t>{});
@@ -105,7 +106,7 @@ matches(Entries& entries, std::string_view query)
       auto& b = entries[right.index];
       if (left.score != right.score)  { return left.score > right.score; }
       if (a.active() != b.active())   { return a.active() > b.active(); }
-      if (a.kind() != a.kind())       { return a.kind() > a.kind(); }
+      if (a.kind() != b.kind())       { return a.kind() > b.kind(); }
       return left.index > right.index;
   });
 
@@ -167,7 +168,7 @@ load(Entries& o_entries, ScreenInteractive& screen, const Entries& active_entrie
 }
 
 
-Entry
+void
 run()
 {
   Entries entries;
@@ -192,7 +193,7 @@ run()
       Elements row{ text(label(entry.kind())) | color(Color::Black) |
                     bgcolor(color_for(entry.kind())) | bold | style,
                     text(" ") | style,
-                    highlighted(entry.info(), match.indices) | style};
+                    highlighted(entry.display(), match.indices) | style};
       if (entry.active()) { row.push_back(text("*") | color(Color::Green) | style); }
       row.push_back(filler());
       row.push_back(text("<" +std::to_string(match.score)+ ">") | style);
@@ -231,7 +232,7 @@ run()
     if (event == Event::Return)
     {
       if (selected_entry == nullptr) { return true; }
-      record_history(history_entries, selected_entry->key());
+      record_history(history_entries, selected_entry->info());
       execute(*selected_entry, active_entries);
       return quit();
     }

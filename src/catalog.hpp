@@ -24,7 +24,7 @@ struct DockerEntry
 
 struct TmuxEntry
 {
-  std::string key{}; // session name for active or full path
+  std::string key{}; // session name
   std::string path{};
   bool        active{false};
 };
@@ -66,8 +66,15 @@ struct Entry
       using T = std::remove_cvref_t<decltype(value)>;
       if constexpr (std::same_as<T, SshEntry>)    { return value.hostname; }
       if constexpr (std::same_as<T, DockerEntry>) { return value.key; }
-      if constexpr (std::same_as<T, TmuxEntry>)   { return value.active ? value.key : value.path; }
+      if constexpr (std::same_as<T, TmuxEntry>)   { return value.path; }
     }, data);
+  }
+
+  std::string_view display() const
+  { /* always display info except active tmux sessions */
+    const auto* entry = std::get_if<TmuxEntry>(&data);
+    if (entry && entry->active) { return entry->key; }
+    return info();
   }
 
   Data data;

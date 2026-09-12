@@ -89,7 +89,7 @@ execute(const Entry& entry, const Entries& active_entries)
     auto target_path = home_dir();
     if (entry.kind() == EntryKind::TmuxEntry && !entry.active())
     {
-      target_path = fs::path{entry.key()};
+      target_path = fs::path{entry.info()};
     }
 
     create_session(session_name, target_path.string());
@@ -113,5 +113,4 @@ copy_info(std::string_view value)
   MAKE_CMD(cmd, "tmux", "set-buffer", "-w", "--", value);
   return run_command(cmd).exit_code == 0;
 }
-
 

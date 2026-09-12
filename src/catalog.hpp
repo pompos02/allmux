@@ -8,7 +8,7 @@
 #include <vector>
 #include <filesystem>
 
-inline std::span<const std::string> g_active_sessions{};
+inline std::vector<std::string> g_active_sessions{};
 
 struct SshEntry
 {
@@ -32,7 +32,8 @@ struct TmuxEntry
   bool        active{false};
 };
 
-/* should match the indices to the `Data` varient below */
+/* should match the indices to the `Data` varient below 
+ * this is also used for ranking, higher index has priority */
 enum class EntryKind
 {
   SshEntry,     // 0

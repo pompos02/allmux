@@ -8,14 +8,14 @@
 #include "catalog.hpp"
 #include "util.hpp"
 
-inline bool
+  inline bool
 is_active(std::string_view s)
 {
   return std::ranges::contains(g_active_sessions, s);
 }
 
 /* pasrse ~/.ssh/config and return the hosts */
-std::expected<Entries, std::string>
+  std::expected<Entries, std::string>
 ssh_entries(const fs::path &ssh_config_path)
 {
   std::fstream input{ssh_config_path};
@@ -32,7 +32,7 @@ ssh_entries(const fs::path &ssh_config_path)
     std::string key;
     fields >> key;
     to_lower_inplace(key);
-    
+
     if (key == "host")
     {
       current_hosts.clear();
@@ -70,11 +70,11 @@ ssh_entries(const fs::path &ssh_config_path)
 }
 
 /* get all docker containers (docker ps -a)*/
-std::expected<Entries, std::string>
+  std::expected<Entries, std::string>
 docker_entries()
-  
+
 {
-  MAKE_CCMD(args, "docker", "ps", "-a", "--format", "{{.Names}}\t{{.Status}}");
+  MAKE_CMD(args, "docker", "ps", "-a", "--format", "{{.Names}}\t{{.Status}}");
   CommandResult result = run_command(args);
   if (result.exit_code != 0) { return std::unexpected("Error on container extraction"); }
 
@@ -87,8 +87,8 @@ docker_entries()
 
     auto name = line.substr(0, seperator);
     entries.push_back(DockerEntry{.key = name,
-                                  .running = line.substr(seperator + 1).starts_with("Up"),
-                                  .active = is_active(name)});
+        .running = line.substr(seperator + 1).starts_with("Up"),
+        .active = is_active(name)});
   }
 
   return entries;
@@ -96,7 +96,7 @@ docker_entries()
 
 
 /* Parse the .allmux config file and get the tmux paths */
-std::expected<Entries, std::string>
+  std::expected<Entries, std::string>
 tmux_entries()
 {
   const auto roots_file = config_dir() / ".allmux";
@@ -119,8 +119,8 @@ tmux_entries()
           !seen.insert(entry.path()).second || !names.insert(fname).second) { continue; }
 
       entries.push_back(TmuxEntry{.key = fname,
-                                  .path = entry.path().string(),
-                                  .active = is_active(fname)});
+          .path = entry.path().string(),
+          .active = is_active(fname)});
     }
 
   }

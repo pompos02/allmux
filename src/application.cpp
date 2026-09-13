@@ -108,7 +108,6 @@ matches(Entries& entries, std::string_view query, const HistoryEntries& hentries
   return result;
 }
 
-// TODO: see the params here, incoming_entries might do some thingks
 void
 merge_entries(Entries& entries, Entries& incoming_entries)
 {

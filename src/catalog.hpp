@@ -9,7 +9,7 @@
 
 struct SshEntry
 {
-  std::string key{}; // alias
+  std::string key{};      // alias
   std::string hostname{};
   std::string user{};
   bool        active{false};
@@ -71,9 +71,13 @@ struct Entry
   }
 
   std::string_view display() const
-  { /* always display info except active tmux sessions */
-    const auto* entry = std::get_if<TmuxEntry>(&data);
-    if (entry && entry->active) { return entry->key; }
+  { /* always display info except active tmux sessions, and ssh sessions */
+    const auto entry_kind = kind();
+    if ((entry_kind == EntryKind::TmuxEntry && active()) ||
+         entry_kind == EntryKind::SshEntry)
+    {
+      return key();
+    }
     return info();
   }
 

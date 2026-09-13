@@ -94,13 +94,13 @@ execute(const Entry& entry, const Entries& active_entries)
 
     create_session(session_name, target_path.string());
 
-    if (entry.kind() == EntryKind::SshEntry)
+    if (auto* ssh_entry = std::get_if<SshEntry>(&entry.data); ssh_entry)
     { /* in ssh context the name of the action/entry is the name of the host */
-      send_keys(session_name, "ssh " + session_name);
+      send_keys(session_name, "ssh " + ssh_entry->user + "@" + ssh_entry->hostname);
     }
     else if (entry.kind() == EntryKind::DockerEntry)
     { /* in docker context the name of the action/entry is the container name */
-      send_keys(session_name, "docker exect -it " + session_name + " bash");
+      send_keys(session_name, "docker exec -it " + session_name + " bash");
     }
   }
   switch_to(session_name);

@@ -9,10 +9,7 @@
 #include <ftxui/component/event.hpp>
 #include <ftxui/component/screen_interactive.hpp>
 #include <ftxui/dom/elements.hpp>
-#include <print>
 #include <thread>
-
-#define IF_VARIANT(Type, name, variant) if (const auto* name = std::get_if<Type>(&(variant)))
 
 static int8_t g_loading = static_cast<int8_t>(EntryKind::Count);
 using namespace ftxui;
@@ -79,10 +76,8 @@ delete_word(std::string& text)
 }
 
 std::vector<Match>
-matches(Entries& entries, std::string_view query)
+matches(Entries& entries, std::string_view query, const HistoryEntries& hentries)
 {
-  //TODO: see if this should actually be called here
-  HistoryEntries hentries = load_history();
   std::vector<Match> result;
   for (size_t i = 0; i < entries.size(); ++i)
   {
@@ -126,7 +121,7 @@ merge_entries(Entries& entries, Entries& incoming_entries)
       auto represented = std::ranges::any_of(entries,[&](const Entry& current){
           return current.kind() != EntryKind::TmuxEntry && incoming.key() == current.key();
       });
-      if (represented) { return; }
+      if (represented) { continue; }
     }
     else
     { /* remove the tmux entry that has the same name with the soon to be merged entry */
@@ -182,7 +177,7 @@ run()
 
   /* Renderer Implementation */
   auto renderer = Renderer([&](){
-    const auto filtered = matches(entries, s_query);
+    const auto filtered = matches(entries, s_query, history_entries);
     Elements rows;
     for (size_t pos = 0; pos < filtered.size(); ++pos)
     {
@@ -213,7 +208,7 @@ run()
 
   /* Keybinds logic */
   auto component = CatchEvent(renderer, [&](Event event) {
-    const auto filtered = matches(entries, s_query);
+    const auto filtered = matches(entries, s_query, history_entries);
     if (s_selected >= filtered.size())
     {
       s_selected = filtered.empty() ? 0 : filtered.size() - 1;

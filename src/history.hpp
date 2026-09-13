@@ -82,7 +82,7 @@ record_history(HistoryEntries& entries, std::string_view key)
 }
 
 inline int64_t
-history_score(HistoryEntries& entries, std::string_view key)
+history_score(const HistoryEntries& entries, std::string_view key)
 {
 
   const auto it = entries.find(std::string{key});

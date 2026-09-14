@@ -47,6 +47,14 @@ color_for(EntryKind kind)
 }
 
 static Color
+classify_text_color(std::string_view text)
+{
+  if      (text == "running") { return Color::Green; }
+  else if (text == "stopped") { return Color::Red; }
+  else                        { return Color::Blue; }
+}
+
+static Color
 selection_color()
 {
   return is_dark_theme() ? Color::Grey30 : Color::RGB(232, 232, 232);
@@ -54,24 +62,25 @@ selection_color()
 }
 
 static Element
-highlighted(std::string_view text, std::span<const size_t> indices)
+highlighted(std::string_view text, std::span<const size_t> indices, size_t dim_until = 0)
 {
   Elements parts;
-  for (size_t i = 0; i < text.size();)
+  for (size_t pos = 0; pos < text.size();)
   {
-    bool matched = std::ranges::binary_search(indices, i);
-    size_t end = i + 1;
-    while (end < text.size() && std::ranges::binary_search(indices, end) == matched)
+    bool matched = std::ranges::binary_search(indices, pos);
+    bool dimmed = pos < dim_until;
+    size_t end = pos + 1;
+    while (end < text.size() && std::ranges::binary_search(indices, end) == matched && (end < dim_until) == dimmed)
     {
       ++end;
     }
     
-    Element part = ftxui::text(std::string{text.substr(i, end - i)});
-    parts.push_back(matched ? part | inverted : part);
-
-    i = end;
+    auto part = ftxui::text(std::string{text.substr(pos, end - pos)});
+    if (matched) { part = part | inverted; }
+    else if (dimmed) { part = part | dim; }
+    parts.push_back(std::move(part));
+    pos = end;
   }
-
   return hbox(std::move(parts));
 }
 
@@ -192,13 +201,22 @@ run()
       const auto& entry = entries[match.index];
       const bool selected =  pos == s_selected;
       const auto style = selected ? bgcolor(selected_color) | bold | focus : nothing;
+      size_t dim_until{0};
+      if (auto slash = entry.display().find_last_of('/');
+          !entry.active() && slash != std::string::npos)
+      {
+        dim_until = slash + 1;
+      }
+
       /* row construction */
       Elements row{ text(label(entry.kind())) | color(Color::RGB(0, 0, 0)) | bgcolor(color_for(entry.kind())) | bold,
                     text(" "),
-                    highlighted(entry.display(), match.indices)};
+                    highlighted(entry.display(), match.indices, dim_until)};
       if (entry.active()) { row.push_back(text("*") | color(Color::Green)); }
+      row.push_back(text("  "));
+      row.push_back(text(entry.extra) | color(classify_text_color(entry.extra)));
       row.push_back(filler());
-      row.push_back(text("<" +std::to_string(match.score)+ ">"));
+      row.push_back(text("<" +std::to_string(match.score)+ ">") | color(Color::GrayDark));
       rows.push_back(hbox(std::move(row)) | style);
       /* end row construction */
     }

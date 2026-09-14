@@ -7,17 +7,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-add_subdirectory(vendor/ftxui)
-
 add_executable(allmux
+  vendor/ftxui.cpp
   src/catalog.cpp
   src/fuzzy.cpp
   src/application.cpp
-  src/main.cpp
 )
-target_link_libraries(allmux PRIVATE
-  ftxui::component
-  ftxui::dom
-  ftxui::screen
-)
+target_include_directories(allmux PRIVATE vendor)
 target_compile_options(allmux PRIVATE -Wall -Wextra -Wpedantic)

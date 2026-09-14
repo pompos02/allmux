@@ -4,14 +4,10 @@
 #include "catalog.hpp"
 
 #include <algorithm>
-#include <cctype>
-#include <ftxui/component/component.hpp>
-#include <ftxui/component/event.hpp>
-#include <ftxui/component/screen_interactive.hpp>
-#include <ftxui/dom/elements.hpp>
+#include <array>
+#include <ftxui.hpp>
 #include <thread>
 
-static int8_t g_loading = static_cast<int8_t>(EntryKind::Count);
 using namespace ftxui;
 
 struct Match
@@ -21,30 +17,11 @@ struct Match
   std::vector<size_t> indices;  // Highlighted chars position
 };
 
-std::string
-label(EntryKind kind)
-{
-  switch (kind)
-  {
-  case EntryKind::SshEntry:    return " SSH ";
-  case EntryKind::DockerEntry: return " DOC ";
-  case EntryKind::TmuxEntry:   return " MUX ";
-  default: return {};
-  }
-}
-
-static Color
-color_for(EntryKind kind)
-{
-  switch (kind)
-  {
-  case EntryKind::SshEntry:    return Color::Cyan;
-  case EntryKind::DockerEntry: return Color::Blue;
-  case EntryKind::TmuxEntry:   return Color::Green;
-  default: return Color::Default;
-
-  }
-}
+static const std::array entry_styles{
+  std::pair{std::string_view{" SSH "}, Color::Cyan},
+  std::pair{std::string_view{" DOC "}, Color::Blue},
+  std::pair{std::string_view{" MUX "}, Color::Green},
+};
 
 static Color
 classify_text_color(std::string_view text)
@@ -87,8 +64,9 @@ highlighted(std::string_view text, std::span<const size_t> indices, size_t dim_u
 static void
 delete_word(std::string& text)
 {
-  for (;!text.empty() && text.back() == isspace(text.back());text.pop_back()) {}
-  for (;!text.empty() && text.back() != isspace(text.back());text.pop_back()) {}
+  constexpr std::string_view whitespace{" \t\n\r\f\v"};
+  text.erase(text.find_last_not_of(whitespace) + 1);
+  text.erase(text.find_last_of(whitespace) + 1);
 }
 
 std::vector<Match>
@@ -99,7 +77,7 @@ matches(Entries& entries, std::string_view query, const HistoryEntries& hentries
   {
     std::string_view text = entries[i].display();
     int64_t hscore = history_score(hentries, entries[i].info());
-    if (trim_view(query).empty())
+    if (trim(query).empty())
     { /* empty query gives all entries score of 1 */
       result.emplace_back(i, 1 + static_cast<int64_t>(hscore * 0.5), std::vector<size_t>{});
       continue;
@@ -151,40 +129,30 @@ merge_entries(Entries& entries, Entries& incoming_entries)
 /* define the work of each worker */
 template<typename Loader>
 static std::jthread
-launch_loader(Entries& current_entries, ScreenInteractive& screen, Loader loader)
+launch_loader(Entries& current_entries, ScreenInteractive& screen, int& loading, Loader loader)
 {
-  return std::jthread([&screen, loader = std::move(loader), &current_entries]() mutable {
+  return std::jthread([&screen, loader = std::move(loader), &current_entries, &loading]() mutable {
     auto entries = loader();
-    screen.Post([entries = std::move(entries), &current_entries]() mutable {
+    screen.Post([entries = std::move(entries), &current_entries, &loading]() mutable {
         merge_entries(current_entries, entries);
-        g_loading--;
+        --loading;
     });
     screen.PostEvent(Event::Custom);
   });
 }
 
-std::jthread
-load(Entries& o_entries, ScreenInteractive& screen, const Entries& active_entries)
-{
-  return std::jthread([&]{
-    constexpr auto worker_num = static_cast<size_t>(EntryKind::Count);
-    std::array<std::jthread, worker_num> workers;
-    workers[0] = launch_loader(o_entries, screen, [&]{ return ssh_entries(active_entries); });
-    workers[1] = launch_loader(o_entries, screen, [&]{ return docker_entries(active_entries); });
-    workers[2] = launch_loader(o_entries, screen, [&]{ return tmux_entries(active_entries); });
-  });
-
-
-}
-
-
-void
-run()
+int
+main()
 {
   Entries entries;
   auto app = ftxui::App::Fullscreen();
   const auto active_entries = active_tmux_sessions();
-  auto loader = load(entries, app, active_entries);
+  int loading = static_cast<int>(EntryKind::Count);
+  const std::array loaders{
+    launch_loader(entries, app, loading, [&]{ return ssh_entries(active_entries); }),
+    launch_loader(entries, app, loading, [&]{ return docker_entries(active_entries); }),
+    launch_loader(entries, app, loading, [&]{ return tmux_entries(active_entries); }),
+  };
   HistoryEntries history_entries = load_history();
   std::string s_query{};  // the actual query written
   std::string s_status{}; // status to show on operations
@@ -199,6 +167,7 @@ run()
     {
       const auto& match = filtered[pos];
       const auto& entry = entries[match.index];
+      const auto& [label, label_color] = entry_styles[static_cast<size_t>(entry.kind())];
       const bool selected =  pos == s_selected;
       const auto style = selected ? bgcolor(selected_color) | bold | focus : nothing;
       size_t dim_until{0};
@@ -209,7 +178,7 @@ run()
       }
 
       /* row construction */
-      Elements row{ text(label(entry.kind())) | color(Color::RGB(0, 0, 0)) | bgcolor(color_for(entry.kind())) | bold,
+      Elements row{ text(std::string{label}) | color(Color::RGB(0, 0, 0)) | bgcolor(label_color) | bold,
                     text(" "),
                     highlighted(entry.display(), match.indices, dim_until)};
       if (entry.active()) { row.push_back(text("*") | color(Color::Green)); }
@@ -220,7 +189,7 @@ run()
       rows.push_back(hbox(std::move(row)) | style);
       /* end row construction */
     }
-    if (g_loading != 0) { rows.push_back(text("Loading Entries") | dim); }
+    if (loading != 0) { rows.push_back(text("Loading Entries") | dim); }
     if (rows.empty())   { rows.push_back(text("No matching entries") | dim); }
 
     Elements search{text("> ") | bold, text(s_query), text(" ") | inverted};
@@ -306,4 +275,5 @@ run()
   });
 
   app.Loop(component);
+  return 0;
 }

@@ -15,7 +15,6 @@
 #include <algorithm>
 #include <chrono>
 
-#include <string_view>
 #include "logger.hpp"
 
 #define MAKE_CMD(name, ...) \
@@ -24,54 +23,12 @@
 
 namespace fs = std::filesystem;
 
-inline std::string
+inline std::string_view
 trim(std::string_view value)
 {
-  const char *begin = value.data();
-  const char *end = begin + value.size();
-  for (; begin != end && std::isspace(*begin); ++begin) { }
-  for (; end != begin && std::isspace(*(end - 1)); --end) { }
-  return std::string(begin, end);
-}
-
-inline std::string_view
-trim_view(std::string_view value)
-{
-  const char *begin = value.data();
-  const char *end = begin + value.size();
-  for (; begin != end && std::isspace(*begin); ++begin) { }
-  for (; end != begin && std::isspace(*(end - 1)); --end) { }
-  return std::string_view(begin, end);
-}
-
-/**
- * @brief Trims leading and trailing whitespace from a view, starting at a given
- * offset.
- *
- * @param value The input string view to be trimmed.
- * @param start The offset index from which to begin trimming.
- * @return std::string_view A view of the trimmed string, or an empty view if
- * `start >= value.size()`.
- */
-inline std::string_view
-get_word(std::string_view value, size_t start, size_t &o_end)
-{
-  if (start >= value.size()) return {};
-  size_t begin{start};
-  for (; begin < value.size() && std::isspace(value[begin]); ++begin) { }
-  size_t end{begin};
-  for (; end < value.size() && !std::isspace(value[end]); ++end) { }
-
-  o_end = end;
-  return value.substr(begin, end - begin);
-}
-
-inline void
-to_lower_inplace(std::string& s)
-{
-  std::ranges::transform(s, s.begin(), [](unsigned char c) {
-      return std::tolower(c);
-  });
+  while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front()))) { value.remove_prefix(1); }
+  while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back()))) { value.remove_suffix(1); }
+  return value;
 }
 
 inline fs::path
@@ -89,12 +46,6 @@ config_dir()
 }
 
 inline fs::path
-default_config_path()
-{
-  return config_dir() / ".allmux";
-}
-
-inline fs::path
 cache_dir()
 {
   fs::path path;
@@ -109,19 +60,6 @@ inline fs::path
 log_file()
 {
   return cache_dir() / "allmux.dmp";
-}
-
-inline std::string
-shell_quote(std::string_view value)
-{
-  std::string result{"'"};
-  for (const char ch : value)
-  {
-    if (ch == '\'') { result += "'\\''"; }
-    else            { result += ch; }
-  }
-  result += '\'';
-  return result;
 }
 
 struct CommandResult
@@ -198,8 +136,7 @@ is_dark_theme()
   std::ifstream file{cache_dir() / "theme"};
   std::string variant;
   std::getline(file, variant);
-  trim(variant);
-  if (variant == "light") { return false; }
+  if (trim(variant) == "light") { return false; }
   else                    { return true ; }
 }
 

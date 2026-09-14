@@ -35,15 +35,17 @@ overlaps(const std::vector<Range> &ranges, size_t begin, size_t end)
 FuzzyMatch
 fuzzy_match(std::string_view text, std::string_view query)
 {
-	const auto trm_query = trim(query);
-	if (trm_query.empty()) return {};
+	query = trim(query);
+	if (query.empty()) return {};
 
 	std::vector<Range> ranges;
 	size_t matched_chars{0};
-	for (size_t begin = 0; begin < trm_query.size();)
+	for (size_t begin = 0; begin < query.size();)
 	{
-		size_t end;// this get's populated here       v
-		const auto part = get_word(trm_query, begin, end);
+		for (; begin < query.size() && std::isspace(static_cast<unsigned char>(query[begin])); ++begin) { }
+		size_t end = begin;
+		for (; end < query.size() && !std::isspace(static_cast<unsigned char>(query[end])); ++end) { }
+		const auto part = query.substr(begin, end - begin);
 		bool found = false;
 		for (size_t position = 0; position + part.size() <= text.size(); ++position)
 		{

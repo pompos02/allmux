@@ -1,8 +1,6 @@
 #include <fstream>
 #include <sstream>
 #include <algorithm>
-#include <fstream>
-#include <sstream>
 #include <set>
 #include "catalog.hpp"
 #include "util.hpp"
@@ -27,10 +25,12 @@ ssh_entries(const Entries& active_entries, const fs::path &ssh_config_path)
     const auto line = trim(raw);
     if (line.empty() || line[0] == '#') { continue; }
 
-    std::istringstream fields{line};
+    std::istringstream fields{std::string{line}};
     std::string key;
     fields >> key;
-    to_lower_inplace(key);
+    std::ranges::transform(key, key.begin(), [](unsigned char ch) {
+      return std::tolower(ch);
+    });
 
     if (key == "host")
     {
@@ -107,7 +107,7 @@ tmux_entries(const Entries& active_entries)
 
   for (std::string line; std::getline(input, line);)
   {
-    const auto root = home_dir() / trim(line);
+    const auto root = home_dir() / fs::path{trim(line)};
     std::error_code error;
     if (!fs::is_directory(root, error)) { continue; }
 

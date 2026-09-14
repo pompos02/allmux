@@ -11,8 +11,6 @@
 #include <string_view>
 #include <utility>
 
-#include <unistd.h>
-
 std::filesystem::path log_file();
 
 #define WriteLog(...)                                                          \

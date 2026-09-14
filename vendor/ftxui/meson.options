@@ -1,2 +1,0 @@
-option('examples', type: 'boolean', value: false, description: 'Build example applications')
-option('tests', type: 'boolean', value: false, description: 'Build and run tests')

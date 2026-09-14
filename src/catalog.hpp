@@ -1,7 +1,6 @@
 #pragma once
 
 #include "util.hpp"
-#include <optional>
 #include <variant>
 #include <string>
 #include <vector>
@@ -84,13 +83,6 @@ struct Entry
 
   Data data;
   std::string extra{};
-};
-
-struct Action
-{
-  EntryKind                  kind;
-  std::string                name;
-  std::optional<std::string> path;
 };
 
 using Entries = std::vector<Entry>;

@@ -18,7 +18,6 @@ struct SshEntry
 struct DockerEntry
 {
   std::string key{}; // container name
-  bool        running{false};
   bool        active{false};
 };
 
@@ -50,6 +49,8 @@ struct Entry
 
   Entry(SshEntry entry)    : data(std::move(entry)) {}
   Entry(DockerEntry entry) : data(std::move(entry)) {}
+  Entry(DockerEntry entry, std::string extra)
+      : data(std::move(entry)), extra(std::move(extra)) { }
   Entry(TmuxEntry entry)   : data(std::move(entry)) {}
 
   std::string_view key() const
@@ -82,6 +83,7 @@ struct Entry
   }
 
   Data data;
+  std::string extra{};
 };
 
 struct Action

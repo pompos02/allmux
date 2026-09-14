@@ -54,6 +54,7 @@ ssh_entries(const Entries& active_entries, const fs::path &ssh_config_path)
       for (const auto idx : current_hosts)
       {
         std::get<SshEntry>(entries[idx].data).hostname = value;
+        entries[idx].extra = value;
       }
     }
     else if (key == "user")
@@ -85,9 +86,8 @@ docker_entries(const Entries& active_entries)
     if (seperator == std::string::npos) { continue; }
 
     auto name = line.substr(0, seperator);
-    entries.push_back(DockerEntry{.key = name,
-        .running = line.substr(seperator + 1).starts_with("Up"),
-        .active = is_active(active_entries, name)});
+    auto extra = line.substr(seperator + 1).starts_with("Up") ? "running" : "stopped";
+    entries.emplace_back(DockerEntry{name, is_active(active_entries, name)}, extra);
   }
 
   return entries;

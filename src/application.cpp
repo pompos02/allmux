@@ -26,9 +26,9 @@ label(EntryKind kind)
 {
   switch (kind)
   {
-  case EntryKind::SshEntry:    return "SSH";
-  case EntryKind::DockerEntry: return "DOC";
-  case EntryKind::TmuxEntry:   return "MUX";
+  case EntryKind::SshEntry:    return " SSH ";
+  case EntryKind::DockerEntry: return " DOC ";
+  case EntryKind::TmuxEntry:   return " MUX ";
   default: return {};
   }
 }
@@ -46,6 +46,13 @@ color_for(EntryKind kind)
   }
 }
 
+static Color
+selection_color()
+{
+  return is_dark_theme() ? Color::Grey30 : Color::RGB(232, 232, 232);
+  
+}
+
 static Element
 highlighted(std::string_view text, std::span<const size_t> indices)
 {
@@ -60,7 +67,7 @@ highlighted(std::string_view text, std::span<const size_t> indices)
     }
     
     Element part = ftxui::text(std::string{text.substr(i, end - i)});
-    parts.push_back(matched ? part | color(Color::Black) | bgcolor(Color::Cyan) : part);
+    parts.push_back(matched ? part | inverted : part);
 
     i = end;
   }
@@ -173,6 +180,7 @@ run()
   std::string s_query{};  // the actual query written
   std::string s_status{}; // status to show on operations
   size_t s_selected{0};      // the selected entry index
+  Color selected_color = selection_color();
 
   /* Renderer Implementation */
   auto renderer = Renderer([&](){
@@ -183,20 +191,21 @@ run()
       const auto& match = filtered[pos];
       const auto& entry = entries[match.index];
       const bool selected =  pos == s_selected;
-      const auto style = selected ? bgcolor(Color::Grey30) | bold : nothing;
-      Elements row{ text(label(entry.kind())) | color(Color::Black) |
-                    bgcolor(color_for(entry.kind())) | bold | style,
-                    text(" ") | style,
-                    highlighted(entry.display(), match.indices) | style};
-      if (entry.active()) { row.push_back(text("*") | color(Color::Green) | style); }
+      const auto style = selected ? bgcolor(selected_color) | bold | focus : nothing;
+      /* row construction */
+      Elements row{ text(label(entry.kind())) | color(Color::RGB(0, 0, 0)) | bgcolor(color_for(entry.kind())) | bold,
+                    text(" "),
+                    highlighted(entry.display(), match.indices)};
+      if (entry.active()) { row.push_back(text("*") | color(Color::Green)); }
       row.push_back(filler());
-      row.push_back(text("<" +std::to_string(match.score)+ ">") | style);
-      rows.push_back(hbox(std::move(row)));
+      row.push_back(text("<" +std::to_string(match.score)+ ">"));
+      rows.push_back(hbox(std::move(row)) | style);
+      /* end row construction */
     }
     if (g_loading != 0) { rows.push_back(text("Loading Entries") | dim); }
     if (rows.empty())   { rows.push_back(text("No matching entries") | dim); }
 
-    Elements search{text("> ") | bold, text(s_query), text(" ") | bgcolor(Color::White)};
+    Elements search{text("> ") | bold, text(s_query), text(" ") | inverted};
     if (!s_status.empty())
     {
       search.push_back(text("  " + s_status) | color(Color::Yellow));
@@ -255,6 +264,13 @@ run()
       {
           s_status = "Copied: " + std::string{selected_entry->info()};
       }
+      return true;
+    }
+    if (event == Event::CtrlT)
+    {
+      auto theme = toggle_theme();
+      selected_color = selection_color();
+      s_status = "Swithced to " + theme;
       return true;
     }
     if (event == Event::Backspace || event == Event::CtrlU ||

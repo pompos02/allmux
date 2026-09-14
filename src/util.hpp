@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <spawn.h>
 #include <string>
 #include <string_view>
@@ -107,8 +108,7 @@ cache_dir()
 inline fs::path
 log_file()
 {
-  auto cache = cache_dir();
-  return cache / "allmux.dmp";
+  return cache_dir() / "allmux.dmp";
 }
 
 inline std::string
@@ -190,4 +190,26 @@ time_now()
   using namespace std::chrono;
   return duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
 
+}
+
+inline bool
+is_dark_theme()
+{
+  std::ifstream file{cache_dir() / "theme"};
+  std::string variant;
+  std::getline(file, variant);
+  trim(variant);
+  if (variant == "light") { return false; }
+  else                    { return true ; }
+}
+
+inline std::string
+toggle_theme()
+{
+  auto file = cache_dir() / "theme";
+  auto theme = is_dark_theme() ? "light" : "dark";
+  std::ofstream buffer{file, std::ios::trunc};
+  if (!buffer) { WriteLog("Error opening {}", file.string()); }
+  buffer << theme;
+  return theme;
 }

@@ -203,13 +203,6 @@ main()
 
   /* Keybinds logic */
   auto component = CatchEvent(renderer, [&](Event event) {
-    const auto filtered = matches(entries, s_query, history_entries);
-    if (s_selected >= filtered.size())
-    {
-      s_selected = filtered.empty() ? 0 : filtered.size() - 1;
-    }
-    const Entry* selected_entry = filtered.empty() ? nullptr
-                                                   : &entries[filtered[s_selected].index];
     const auto quit = [&] {
       app.ExitLoopClosure()();
       return true;
@@ -218,6 +211,25 @@ main()
     {
       return quit();
     }
+    if (event == Event::Backspace || event == Event::CtrlU ||
+        event == Event::CtrlW || event.is_character())
+    {
+      if (event == Event::Backspace && !s_query.empty()) { s_query.pop_back(); }
+      else if (event == Event::CtrlU) { s_query.clear(); }
+      else if (event == Event::CtrlW) { delete_word(s_query); }
+      else if (event.is_character()) { s_query += event.character(); }
+      s_selected = 0;
+      s_status.clear();
+      return true;
+    }
+
+    const auto filtered = matches(entries, s_query, history_entries);
+    if (s_selected >= filtered.size())
+    {
+      s_selected = filtered.empty() ? 0 : filtered.size() - 1;
+    }
+    const Entry* selected_entry = filtered.empty() ? nullptr
+                                                   : &entries[filtered[s_selected].index];
     if (event == Event::Return)
     {
       if (selected_entry == nullptr) { return true; }
@@ -258,17 +270,6 @@ main()
       auto theme = toggle_theme();
       selected_color = selection_color();
       s_status = "Swithced to " + theme;
-      return true;
-    }
-    if (event == Event::Backspace || event == Event::CtrlU ||
-        event == Event::CtrlW || event.is_character())
-    {
-      if (event == Event::Backspace && !s_query.empty()) { s_query.pop_back(); }
-      else if (event == Event::CtrlU) { s_query.clear(); }
-      else if (event == Event::CtrlW) { delete_word(s_query); }
-      else if (event.is_character()) { s_query += event.character(); }
-      s_selected = 0;
-      s_status.clear();
       return true;
     }
     return false;

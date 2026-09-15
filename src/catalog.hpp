@@ -8,7 +8,7 @@
 
 struct SshEntry
 {
-  std::string key{};      // alias
+  std::string key{}; // alias
   std::string hostname{};
   std::string user{};
   bool        active{false};
@@ -75,7 +75,7 @@ struct Entry
     const auto entry_kind = kind();
     if ((entry_kind == EntryKind::TmuxEntry && active()) ||
          entry_kind == EntryKind::SshEntry)
-    {
+    { /* tmux: session name, ssh: ip address */
       return key();
     }
     return info();

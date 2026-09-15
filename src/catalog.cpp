@@ -94,7 +94,8 @@ docker_entries(const Entries& active_entries)
 }
 
 
-/* Parse the .allmux config file and get the tmux paths */
+/* Parse the .allmux config file and get the tmux paths
+ * and all the active sessions */
 Entries
 tmux_entries(const Entries& active_entries)
 {
@@ -102,7 +103,6 @@ tmux_entries(const Entries& active_entries)
   std::ifstream input{roots_file};
 
   Entries entries;
-  std::set<fs::path> seen;
   std::set<std::string> names;
 
   for (std::string line; std::getline(input, line);)
@@ -112,16 +112,31 @@ tmux_entries(const Entries& active_entries)
     if (!fs::is_directory(root, error)) { continue; }
 
     for (const auto& entry : fs::directory_iterator{root})
-    {
+    { /* iterate to the imidiate chldren */
       const auto fname = entry.path().filename().string();
-      if (fname.starts_with('.') || !entry.is_directory() ||
-          !seen.insert(entry.path()).second || !names.insert(fname).second) { continue; }
+      if (fname.starts_with('.') || !entry.is_directory() || !names.insert(fname).second)
+      {
+        continue;
+      }
 
       entries.push_back(TmuxEntry{.key = fname,
           .path = entry.path().string(),
           .active = is_active(active_entries, fname)});
     }
-
   }
+
+  // Append the active tmux sessions we haven't see yet
+  for (const auto &active : active_entries)
+  {
+    const std::string fname = fs::path{active.info()}.filename().string();
+    if (names.insert(fname).second)
+    {
+      entries.push_back(TmuxEntry{ .key = fname,
+          .path = std::string{active.info()},
+          .active = true});
+    }
+  }
+
+  std::ranges::reverse(entries); // give priority to the top entries
   return entries;
 }

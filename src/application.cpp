@@ -53,7 +53,7 @@ highlighted(std::string_view text, std::span<const size_t> indices, size_t dim_u
     }
     
     auto part = ftxui::text(std::string{text.substr(pos, end - pos)});
-    if (matched) { part = part | inverted; }
+    if (matched) { part = part | bgcolor(Color::Yellow) | color(Color::Red) | bold; }
     else if (dimmed) { part = part | dim; }
     parts.push_back(std::move(part));
     pos = end;

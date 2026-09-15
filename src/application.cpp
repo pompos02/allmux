@@ -156,7 +156,7 @@ main()
   HistoryEntries history_entries = load_history();
   std::string s_query{};  // the actual query written
   std::string s_status{}; // status to show on operations
-  size_t s_selected{0};      // the selected entry index
+  size_t s_selected{0};   // the selected entry index
   Color selected_color = selection_color();
 
   /* Renderer Implementation */

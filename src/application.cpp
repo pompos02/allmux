@@ -38,10 +38,12 @@ selection_color()
   
 }
 
-static Element
-highlighted(std::string_view text, std::span<const size_t> indices, size_t dim_until = 0)
+/* I don't think i like the dimming implemetnation */
+[[maybe_unused]] static Element
+highlighted(std::string_view text, std::span<const size_t> indices, size_t dim_until)
 {
   Elements parts;
+  dim_until = 0;
   for (size_t pos = 0; pos < text.size();)
   {
     bool matched = std::ranges::binary_search(indices, pos);
@@ -55,6 +57,24 @@ highlighted(std::string_view text, std::span<const size_t> indices, size_t dim_u
     auto part = ftxui::text(std::string{text.substr(pos, end - pos)});
     if (matched) { part = part | bgcolor(Color::Yellow) | color(Color::Red) | bold; }
     else if (dimmed) { part = part | dim; }
+    parts.push_back(std::move(part));
+    pos = end;
+  }
+  return hbox(std::move(parts));
+}
+
+static Element
+highlighted(std::string_view text, std::span<const size_t> indices)
+{
+  Elements parts;
+  for (size_t pos = 0; pos < text.size();)
+  {
+    bool matched = std::ranges::binary_search(indices, pos);
+    size_t end = pos + 1;
+    while (end < text.size() && std::ranges::binary_search(indices, end) == matched) { ++end; }
+    
+    auto part = ftxui::text(std::string{text.substr(pos, end - pos)});
+    if (matched) { part = part | bgcolor(Color::Yellow) | color(Color::Red) | bold; }
     parts.push_back(std::move(part));
     pos = end;
   }
@@ -170,17 +190,10 @@ main()
       const auto& [label, label_color] = entry_styles[static_cast<size_t>(entry.kind())];
       const bool selected =  pos == s_selected;
       const auto style = selected ? bgcolor(selected_color) | bold | focus : nothing;
-      size_t dim_until{0};
-      if (auto slash = entry.display().find_last_of('/');
-          !entry.active() && slash != std::string::npos)
-      {
-        dim_until = slash + 1;
-      }
-
       /* row construction */
       Elements row{ text(std::string{label}) | color(Color::RGB(0, 0, 0)) | bgcolor(label_color) | bold,
                     text(" "),
-                    highlighted(entry.display(), match.indices, dim_until)};
+                    highlighted(entry.display(), match.indices)};
       if (entry.active()) { row.push_back(text("*") | color(Color::Green)); }
       row.push_back(text("  "));
       row.push_back(text(entry.extra) | color(classify_text_color(entry.extra)));

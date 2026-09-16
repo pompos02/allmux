@@ -74,7 +74,8 @@ highlighted(std::string_view text, std::span<const size_t> indices)
     while (end < text.size() && std::ranges::binary_search(indices, end) == matched) { ++end; }
     
     auto part = ftxui::text(std::string{text.substr(pos, end - pos)});
-    if (matched) { part = part | bgcolor(Color::Yellow) | color(Color::Red) | bold; }
+    auto bg_color = is_dark_theme() ? bgcolor(Color::RGB(242, 208, 107)): bgcolor(Color::RGB(234, 183, 0));
+    if (matched) { part = part | bg_color | color(Color::Red) | bold; }
     parts.push_back(std::move(part));
     pos = end;
   }

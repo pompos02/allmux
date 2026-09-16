@@ -128,7 +128,7 @@ tmux_entries(const Entries& active_entries)
   // Append the active tmux sessions we haven't see yet
   for (const auto &active : active_entries)
   {
-    const std::string fname = fs::path{active.info()}.filename().string();
+    const std::string fname{active.key()};
     if (names.insert(fname).second)
     {
       entries.push_back(TmuxEntry{ .key = fname,

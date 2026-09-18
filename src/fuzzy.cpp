@@ -1,7 +1,7 @@
 #include "fuzzy.hpp"
 #include "util.hpp"
 #include <cctype>
-#include <ranges>
+#include <math.h>
 #include <algorithm>
 #include <vector>
 
@@ -33,7 +33,7 @@ overlaps(const std::vector<Range> &ranges, size_t begin, size_t end)
 }
 
 FuzzyMatch
-fuzzy_match(std::string_view text, std::string_view query)
+fuzzy_match(std::string_view text, std::string_view query, EntryKind kind)
 {
 	query = trim(query);
 	if (query.empty()) return {};
@@ -61,15 +61,25 @@ fuzzy_match(std::string_view text, std::string_view query)
 		begin = end;
 	}
 
+	size_t text_len = text.size();
+	int score{0};
 	std::ranges::sort(ranges, {}, &Range::begin);
 	std::vector<size_t> indices;
 	indices.reserve(matched_chars);
 	for (const auto &range : ranges)
 	{
 		for (auto index = range.begin; index < range.end; ++index)
+		{
 			indices.push_back(index);
+			constexpr int max_boost = 5;
+			if (kind == EntryKind::TmuxEntry)
+			{
+				double norm_distance = static_cast<double>(text_len - index) / text_len;
+				score += static_cast<int>(max_boost * std::pow(std::max(0.0, 1.0 - norm_distance), 2.0));
+			}
+		}
 	}
 
-	const int score = text.empty() ? 0 : static_cast<int>(matched_chars * 100 / text.size());
+	if (!text.empty()) score += static_cast<int>(matched_chars * 100 / text.size());
 	return {.matched = true, .score = score, .indices = std::move(indices)};
 }

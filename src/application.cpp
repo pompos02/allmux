@@ -103,7 +103,7 @@ matches(Entries& entries, std::string_view query, const HistoryEntries& hentries
       result.emplace_back(i, 1 + static_cast<int64_t>(hscore * 0.5), std::vector<size_t>{});
       continue;
     }
-    auto fuzzy = fuzzy_match(text, query);
+    auto fuzzy = fuzzy_match(text, query, entries[i].kind());
     if (!fuzzy.matched) { continue; }
 
     int64_t score = fuzzy.score + static_cast<int64_t>(fuzzy.score * hscore / 60);

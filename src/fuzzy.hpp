@@ -1,5 +1,6 @@
 #pragma once
 
+#include "catalog.hpp"
 #include <string_view>
 #include <vector>
 
@@ -11,4 +12,5 @@ struct FuzzyMatch
 };
 
 [[nodiscard]] FuzzyMatch
-fuzzy_match(std::string_view text, std::string_view query);
+fuzzy_match(std::string_view text, std::string_view query, EntryKind kind);
+
